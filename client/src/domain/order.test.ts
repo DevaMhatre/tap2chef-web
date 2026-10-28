@@ -7,6 +7,7 @@ import {
   addToDraft,
   billOf,
   businessDate,
+  canRemove,
   closeBill,
   correctPayment,
   dayBefore,
@@ -18,6 +19,7 @@ import {
   outOn,
   presentBill,
   receivePayment,
+  removePayment,
   reopenForDishes,
   sendDraft,
   settledOn,
@@ -227,6 +229,43 @@ describe("correctPayment", () => {
   it("changes the method, keeps the amount, and leaves a mark", () => {
     expect(correctPayment(payment, "upi", 9)).toEqual({ ok: true, value: { ...payment, method: "upi", correctedAt: 9 } });
     expect(correctPayment(payment, "cash", 9)).toEqual({ ok: false, error: "unchanged" });
+  });
+});
+
+describe("removePayment", () => {
+  const lines = [sent(draftLine("l1", paneer), "r1", 10)]; // ₹240
+  const pay = (id: string, amount: number): Payment => ({
+    id: id as PaymentId,
+    orderId: "o1" as OrderId,
+    amount: paise(amount),
+    receivedAt: 3,
+    method: "upi",
+  });
+  const billed: Order = { ...order("o1"), state: { status: "billed", billedAt: 2 } };
+  const settledOrder: Order = { ...order("o1"), state: { status: "settled", billedAt: 2, settledAt: 4, subtotal: paise(24000) } };
+
+  it("takes any payment off an unpaid bill, and it stops counting but stays listed", () => {
+    const removed = removePayment(pay("a", 10000), billed, lines, [pay("a", 10000)], 9);
+    expect(removed).toEqual({ ok: true, value: { ...pay("a", 10000), removedAt: 9 } });
+    const bill = billOf(billed, lines, [removed.ok ? removed.value : pay("x", 1)]);
+    expect(bill).toMatchObject({ paid: 0, remaining: 24000 });
+    expect(bill.payments).toHaveLength(1);
+    expect(removePayment({ ...pay("a", 10000), removedAt: 9 }, billed, lines, [], 10)).toEqual({ ok: false, error: "removed" });
+  });
+
+  it("on a settled bill, takes off only an excess, so it stays exact", () => {
+    const twice = [pay("a", 24000), pay("b", 24000)];
+    expect(billOf(settledOrder, lines, twice).remaining).toBe(-24000);
+    expect(canRemove(twice[1]!, settledOrder, billOf(settledOrder, lines, twice))).toBe(true);
+    expect(removePayment(twice[1]!, settledOrder, lines, twice, 9).ok).toBe(true);
+
+    const once = [pay("a", 24000)];
+    expect(canRemove(once[0]!, settledOrder, billOf(settledOrder, lines, once))).toBe(false);
+    expect(removePayment(once[0]!, settledOrder, lines, once, 9)).toEqual({ ok: false, error: "leavesShort" });
+  });
+
+  it("can't correct a removed payment", () => {
+    expect(correctPayment({ ...pay("a", 100), removedAt: 5 }, "cash", 9)).toEqual({ ok: false, error: "removed" });
   });
 });
 

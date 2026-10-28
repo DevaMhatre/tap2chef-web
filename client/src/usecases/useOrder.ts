@@ -81,6 +81,8 @@ export type OrderScreen =
        * `invalid`: what was typed doesn't make a payment yet; the quote says why.
        */
       receive(input: BillInput): Promise<Result<Received, PaymentError | "missing" | "invalid">>;
+      /** Takes a wrong payment off this bill; it stays listed. */
+      removePayment: OrderCommands["removePayment"];
       /** A bill with nothing left to pay. */
       closeBill(input: BillInput): Promise<Result<Undo, CloseError | "invalid">>;
     } & Pick<OrderCommands, "stepQuantity" | "setNote" | "removeLine" | "voidLine" | "setOutToday">);
@@ -180,6 +182,7 @@ export function useOrder(target: OrderTarget): OrderScreen {
     next,
     bill,
     presentBill: () => commands.presentBill(order.id),
+    removePayment: commands.removePayment,
     billInput: {
       finalAmount: bill.discount ? toRupeeText(bill.due) : "",
       reason: bill.discount?.reason ?? "",

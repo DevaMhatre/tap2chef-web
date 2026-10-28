@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { MdChevronLeft } from "react-icons/md";
 import { Link } from "react-router";
-import type { OrderId } from "../../domain/order";
+import type { Paise } from "../../domain/money";
+import { counts, type OrderId } from "../../domain/order";
 import { useOrders, type SettledSummary } from "../../usecases/useOrders";
 import { ListRow, ListSection } from "../design-system/GroupedList";
 import { paidByLabel, shortOrderTitle } from "../features/order/labels";
@@ -31,10 +32,12 @@ export default function SettledPage() {
   const { settled, takings } = orders;
   const row = (bill: SettledSummary) => {
     const { state } = bill.order;
+    // What needs a look comes first, so a narrow row never cuts it off.
     const detail = [
-      paidByLabel(bill.bill.payments),
+      bill.bill.remaining < 0 && `${formatPrice(-bill.bill.remaining as Paise)} extra`,
+      paidByLabel(bill.bill.payments.filter(counts)),
       bill.bill.discount && `${formatPrice(bill.bill.discount.amount)} off`,
-      bill.bill.payments.some((p) => p.correctedAt) && "corrected",
+      bill.bill.payments.some((p) => p.correctedAt || p.removedAt) && "corrected",
     ]
       .filter(Boolean)
       .join(" · ");

@@ -42,12 +42,12 @@ const line = (orderId: string): OrderLine => ({
   state: { status: "sent", roundId: "r" as RoundId, sentAt: 2 },
 });
 
-function renderOrders() {
+function renderOrders(extra: Payment[] = []) {
   const orders = fakeOrderRepository({
     tables: [{ id: t1, name: "1", sortKey: "1" }],
     orders: [paid("a", 10), paid("b", 20), paid("old", 30, "2026-10-28" as BusinessDate)],
     lines: [line("a"), line("b")],
-    payments: [pay("pa", "a", "cash", 22000), pay("pb1", "b", "cash", 5000), pay("pb2", "b", "upi", 17000), pay("po", "old", "upi", 22000)],
+    payments: [pay("pa", "a", "cash", 22000), pay("pb1", "b", "cash", 5000), pay("pb2", "b", "upi", 17000), pay("po", "old", "upi", 22000), ...extra],
   });
   const ports = {
     orders: orders.repository,
@@ -85,5 +85,22 @@ describe("useOrders", () => {
     const orders = ready(result.current);
     expect(orders.takings).toEqual({ total: 44000, cash: 5000, upi: 39000 });
     expect(orders.settled.find((s) => s.order.id === "a")!.bill.payments[0]!.correctedAt).toBeDefined();
+  });
+
+  it("takes an excess off a settled bill, and the drawers stop counting it", async () => {
+    // Bill "a" (₹220) was taken on two devices.
+    const { result } = renderOrders([pay("pa2", "a", "cash", 22000)]);
+    await waitFor(() => expect(result.current.state).toBe("ready"));
+    const a = () => ready(result.current).settled.find((s) => s.order.id === "a")!;
+    expect(a().bill.remaining).toBe(-22000);
+    expect(ready(result.current).takings.cash).toBe(49000);
+    expect(a().bill.payments.map((p) => ready(result.current).canRemove(a(), p))).toEqual([true, true]);
+
+    await act(async () => {
+      expect((await ready(result.current).removePayment("pa2" as PaymentId)).ok).toBe(true);
+    });
+    expect(a().bill.remaining).toBe(0);
+    expect(ready(result.current).takings.cash).toBe(27000);
+    expect(a().bill.payments.map((p) => ready(result.current).canRemove(a(), p))).toEqual([false, false]);
   });
 });

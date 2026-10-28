@@ -58,7 +58,12 @@ export type Payment = {
   receivedAt: number;
   /** When its method was put right ("it was UPI, not cash"); it stays visible. */
   correctedAt?: number;
+  /** Taken off the bill (recorded twice, or a typo); kept and shown, never counted. */
+  removedAt?: number;
 } & Tender;
+
+/** A payment that counts towards the bill and the day's money. */
+export const counts = (payment: Payment): boolean => payment.removedAt === undefined;
 
 export type Order = {
   id: OrderId;
@@ -200,6 +205,7 @@ export type BillView = {
   paid: Paise;
   /** What is still to come; below zero when more came in than is due. */
   remaining: number;
+  /** Every payment, removed ones included (they show, struck through), oldest first. */
   payments: Payment[];
 };
 
@@ -210,7 +216,7 @@ export function billOf(order: Order, lines: readonly OrderLine[], payments: read
   const subtotal = state.status === "settled" ? state.subtotal : orderTotal(lines.filter((l) => l.orderId === order.id));
   const discount = state.status === "open" ? undefined : state.discount;
   const due = amountDue(subtotal, discount);
-  const paid = amountPaid(own);
+  const paid = amountPaid(own.filter(counts));
   return { subtotal, ...(discount && { discount }), due, paid, remaining: due - paid, payments: own };
 }
 
@@ -305,11 +311,35 @@ function settled(order: Order, bill: BillView, at: number): Order {
  * "It was UPI, not cash." The method changes; the amount can't, so a
  * correction never moves the day's total, only which drawer it is in.
  */
-export function correctPayment(payment: Payment, method: Tender["method"], at: number): Result<Payment, "unchanged"> {
+export function correctPayment(payment: Payment, method: Tender["method"], at: number): Result<Payment, "unchanged" | "removed"> {
+  if (!counts(payment)) return err("removed");
   if (payment.method === method) return err("unchanged");
   const { id, orderId, amount, receivedAt } = payment;
   return ok({ id, orderId, amount, receivedAt, method, correctedAt: at });
 }
+
+export type RemoveError = "removed" | "leavesShort";
+
+/**
+ * Takes a wrong payment off the bill: recorded on two devices, or a typo.
+ * While the bill is open for payment, any payment can go. A settled bill
+ * never reopens, so there only an excess can go — the bill stays exact.
+ */
+export function removePayment(
+  payment: Payment,
+  order: Order,
+  lines: readonly OrderLine[],
+  payments: readonly Payment[],
+  at: number,
+): Result<Payment, RemoveError> {
+  if (!counts(payment)) return err("removed");
+  if (order.state.status === "settled" && billOf(order, lines, payments).remaining + payment.amount > 0) return err("leavesShort");
+  return ok({ ...payment, removedAt: at });
+}
+
+/** Whether `removePayment` would accept it, for showing Remove only where it works. */
+export const canRemove = (payment: Payment, order: Order, bill: BillView): boolean =>
+  counts(payment) && (order.state.status !== "settled" || bill.remaining + payment.amount <= 0);
 
 export type SettledOrder = Order & { state: Extract<OrderState, { status: "settled" }> };
 

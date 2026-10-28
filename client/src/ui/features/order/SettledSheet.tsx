@@ -1,5 +1,6 @@
 import { useRef, useState } from "react";
-import { isLive, lineTotal, ticketOf, type PaymentId } from "../../../domain/order";
+import type { Paise } from "../../../domain/money";
+import { counts, isLive, lineTotal, ticketOf, type Payment, type PaymentId } from "../../../domain/order";
 import type { PaymentMethod } from "../../../domain/settlement";
 import type { ReadyOrders, SettledSummary } from "../../../usecases/useOrders";
 import { Button } from "../../design-system/Button";
@@ -7,8 +8,10 @@ import { ListSection } from "../../design-system/GroupedList";
 import { haptic } from "../../design-system/haptic";
 import { SegmentedControl } from "../../design-system/SegmentedControl";
 import { Sheet } from "../../design-system/Sheet";
+import { useUndoToast } from "../../design-system/UndoToast";
 import { formatPrice, formatTime } from "../../format";
 import { METHOD_LABEL, orderTitle } from "./labels";
+import { PaymentRow } from "./PaymentRow";
 
 type Props = { bill: SettledSummary | null; orders: ReadyOrders; onClose: () => void };
 
@@ -25,14 +28,26 @@ export function SettledSheet({ bill, orders, onClose }: Props) {
 
 function Opened({ bill, orders, onClose }: { bill: SettledSummary; orders: ReadyOrders; onClose: () => void }) {
   const { state } = bill.order;
-  const { payments, discount, subtotal, paid } = bill.bill;
+  const { payments, discount, subtotal, paid, remaining } = bill.bill;
   // Visual-only state: the methods being chosen, until Save.
   const [methods, setMethods] = useState<Record<PaymentId, PaymentMethod>>(() =>
     Object.fromEntries(payments.map((p) => [p.id, p.method])),
   );
   const [failure, setFailure] = useState<string>();
   const saving = useRef(false);
-  const changed = payments.filter((p) => methods[p.id] !== p.method);
+  const showUndo = useUndoToast();
+  const changed = payments.filter((p) => counts(p) && methods[p.id] !== p.method);
+
+  async function remove(payment: Payment) {
+    try {
+      const result = await orders.removePayment(payment.id);
+      if (!result.ok) return;
+      haptic();
+      showUndo(`${METHOD_LABEL[payment.method]} ${formatPrice(payment.amount)} removed`, result.value);
+    } catch {
+      setFailure("Couldn't save on this device. Try again.");
+    }
+  }
 
   async function save() {
     if (saving.current) return;
@@ -86,25 +101,37 @@ function Opened({ bill, orders, onClose }: { bill: SettledSummary; orders: Ready
 
         {failure && <p className="rounded-xl bg-primary/12 px-4 py-3 text-[15px] font-medium text-primary">{failure}</p>}
 
+        {remaining < 0 && (
+          <p className="rounded-xl bg-warning/15 px-4 py-3 text-[15px] font-medium">
+            {formatPrice(-remaining as Paise)} more than the bill was received — taken twice? Remove the extra payment.
+          </p>
+        )}
+
         {payments.length > 0 && (
-          <ListSection header="Paid by" footer="Got the method wrong? Change it here; the amount stays.">
+          <ListSection
+            header="Paid by"
+            footer={remaining < 0 ? undefined : "Got the method wrong? Change it here; the amount stays."}
+          >
             {payments.map((p) => (
-              <div key={p.id} className="flex items-center gap-3 px-4 py-2">
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[17px] tabular-nums">{formatPrice(p.amount)}</span>
-                  <span className={`block text-[13px] ${p.correctedAt ? "font-semibold text-warning" : "text-muted"}`}>
-                    {p.correctedAt ? `Corrected ${formatTime(p.correctedAt)}` : formatTime(p.receivedAt)}
-                  </span>
-                </span>
-                <div className="w-40 shrink-0">
-                  <SegmentedControl
-                    label={`${formatPrice(p.amount)} paid by`}
-                    options={METHODS}
-                    value={methods[p.id] ?? p.method}
-                    onChange={(method) => setMethods((current) => ({ ...current, [p.id]: method }))}
-                  />
-                </div>
-              </div>
+              <PaymentRow key={p.id} payment={p}>
+                {/* An excess is fixed first: Remove. Otherwise only the method can change. */}
+                {remaining < 0
+                  ? orders.canRemove(bill, p) && (
+                      <Button variant="plain" size="compact" className="-mr-3" onClick={() => remove(p)}>
+                        Remove
+                      </Button>
+                    )
+                  : counts(p) && (
+                      <div className="w-40 shrink-0">
+                        <SegmentedControl
+                          label={`${formatPrice(p.amount)} paid by`}
+                          options={METHODS}
+                          value={methods[p.id] ?? p.method}
+                          onChange={(method) => setMethods((current) => ({ ...current, [p.id]: method }))}
+                        />
+                      </div>
+                    )}
+              </PaymentRow>
             ))}
           </ListSection>
         )}

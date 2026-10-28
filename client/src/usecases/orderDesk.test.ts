@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CategoryId, ItemId, MenuItem, OrderableItem, ProfileId } from "../domain/menu";
 import { paise } from "../domain/money";
-import { activeOrders, ticketOf, type Order, type OrderId } from "../domain/order";
+import { activeOrders, ticketOf, type Order, type OrderId, type PaymentId } from "../domain/order";
 import { sortByOrder } from "../domain/ordering";
 import type { TableId } from "../domain/tables";
 import { fakeClock, fakeIds, fakeOrderRepository } from "./fakes";
@@ -355,5 +355,25 @@ describe("the bill", () => {
     expect(await desk.correctPayment(payment!.id, "cash")).toEqual({ ok: false, error: "unchanged" });
     expect(await desk.correctPayment(payment!.id, "upi")).toEqual({ ok: true, value: undefined });
     expect(fake.current().payments).toMatchObject([{ method: "upi", amount: 26000, correctedAt: NOON }]);
+  });
+
+  it("removes a wrong part payment, keeps it listed, and undoes the removal", async () => {
+    const { fake, desk } = await billed();
+    await desk.receive(o1, upi, paise(20000)); // ₹200 typed for ₹20
+    const [payment] = fake.current().payments;
+    const removed = await desk.removePayment(payment!.id);
+    expect(fake.current().payments).toMatchObject([{ id: payment!.id, removedAt: NOON }]);
+    expect(await desk.receive(o1, upi, paise(26000))).toMatchObject({ ok: true, value: { settled: true } });
+
+    if (removed.ok) await removed.value();
+    expect(fake.current().payments[0]!.removedAt).toBeUndefined();
+  });
+
+  it("won't leave a settled bill short", async () => {
+    const { fake, desk } = await billed();
+    await desk.receive(o1, cash, paise(26000));
+    const [payment] = fake.current().payments;
+    expect(await desk.removePayment(payment!.id)).toEqual({ ok: false, error: "leavesShort" });
+    expect(await desk.correctPayment("nope" as PaymentId, "upi")).toEqual({ ok: false, error: "missing" });
   });
 });

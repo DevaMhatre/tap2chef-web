@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { toRupeeText, type Paise } from "../../../domain/money";
-import { dishCount } from "../../../domain/order";
+import { counts, dishCount, type Payment } from "../../../domain/order";
 import type { BillInput, PaymentMethod } from "../../../domain/settlement";
 import type { Undo } from "../../../usecases/orderDesk";
 import type { ReadyOrder } from "../../../usecases/useOrder";
@@ -11,8 +11,9 @@ import { haptic } from "../../design-system/haptic";
 import { SegmentedControl } from "../../design-system/SegmentedControl";
 import { Sheet } from "../../design-system/Sheet";
 import { useUndoToast } from "../../design-system/UndoToast";
-import { formatPrice, formatTime } from "../../format";
+import { formatPrice } from "../../format";
 import { METHOD_LABEL, orderTitle } from "./labels";
+import { PaymentRow } from "./PaymentRow";
 
 type Props = {
   open: boolean;
@@ -93,6 +94,18 @@ function BillForm({ screen, onSettled, onClose }: Omit<Props, "open">) {
     }
   }
 
+  // A wrong payment comes off at once, with Undo: forgiveness, not a dialog.
+  async function remove(payment: Payment) {
+    try {
+      const result = await screen.removePayment(payment.id);
+      if (!result.ok) return;
+      haptic();
+      showUndo(`${METHOD_LABEL[payment.method]} ${formatPrice(payment.amount)} removed`, result.value);
+    } catch {
+      setFailure("Couldn't save on this device. Try again.");
+    }
+  }
+
   function explain(error: string) {
     // Settled or gone on another screen: nothing left to do here.
     if (error === "notBilled" || error === "missing") return onClose();
@@ -112,9 +125,15 @@ function BillForm({ screen, onSettled, onClose }: Omit<Props, "open">) {
   return (
     <div className="space-y-6">
       <section className="pt-2 text-center">
-        <p className="text-[44px] leading-none font-bold tracking-tight tabular-nums">{formatPrice(Math.max(0, remaining) as Paise)}</p>
+        <p className={`text-[44px] leading-none font-bold tracking-tight tabular-nums ${remaining < 0 ? "text-warning" : ""}`}>
+          {formatPrice(Math.abs(remaining) as Paise)}
+        </p>
         <p className="mt-2 text-[15px] text-muted">
-          {paid > 0 ? (
+          {remaining < 0 ? (
+            <>
+              extra · <span className="tabular-nums">{formatPrice(paid)}</span> received for {formatPrice(due)}
+            </>
+          ) : paid > 0 ? (
             <>
               to go · <span className="tabular-nums">{formatPrice(paid)}</span> of {formatPrice(due)} paid
             </>
@@ -160,15 +179,22 @@ function BillForm({ screen, onSettled, onClose }: Omit<Props, "open">) {
         </div>
       )}
 
+      {remaining < 0 && (
+        <p className="rounded-xl bg-warning/15 px-4 py-3 text-[15px] font-medium">
+          {formatPrice(-remaining as Paise)} more than the bill was received — taken twice? Remove the extra payment.
+        </p>
+      )}
+
       {payments.length > 0 && (
         <ListSection header="Received">
           {payments.map((p) => (
-            <div key={p.id} className="flex min-h-11 items-center justify-between px-4 py-2 text-[17px]">
-              <span>
-                {METHOD_LABEL[p.method]} <span className="text-[15px] text-muted">· {formatTime(p.receivedAt)}</span>
-              </span>
-              <span className="tabular-nums">{formatPrice(p.amount)}</span>
-            </div>
+            <PaymentRow key={p.id} payment={p}>
+              {counts(p) && (
+                <Button variant="plain" size="compact" className="-mr-3" onClick={() => remove(p)}>
+                  Remove
+                </Button>
+              )}
+            </PaymentRow>
           ))}
         </ListSection>
       )}

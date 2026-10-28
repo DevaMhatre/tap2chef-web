@@ -14,6 +14,7 @@ import {
   sendDraft,
   presentBill,
   receivePayment,
+  removePayment,
   reopenForDishes,
   voidSent,
   withNote,
@@ -28,6 +29,7 @@ import {
   type Payment,
   type PaymentError,
   type PaymentId,
+  type RemoveError,
   type VoidReason,
 } from "../domain/order";
 import { err, ok, type Result } from "../domain/result";
@@ -90,7 +92,9 @@ export type OrderCommands = {
   /** Settles a bill with nothing left to pay: ₹0 dishes, or on the house. */
   closeBill(orderId: OrderId, discount?: Discount): Promise<Result<Undo, CloseError>>;
   /** "It was UPI, not cash." Same amount, other method, and it shows. */
-  correctPayment(paymentId: PaymentId, method: PaymentMethod): Promise<Result<void, "unchanged" | "missing">>;
+  correctPayment(paymentId: PaymentId, method: PaymentMethod): Promise<Result<void, "unchanged" | "removed" | "missing">>;
+  /** Takes a wrong payment off the bill; it stays listed. Undo puts it back. */
+  removePayment(paymentId: PaymentId): Promise<Result<Undo, RemoveError | "missing">>;
 };
 
 export type OrderDesk = {
@@ -355,12 +359,23 @@ export function createOrderDesk(repository: OrderRepository, ids: IdGenerator, c
       }),
 
     correctPayment: (paymentId, method) =>
-      run<Result<void, "unchanged" | "missing">>(`correctPayment:${paymentId}`, (s) => {
+      run<Result<void, "unchanged" | "removed" | "missing">>(`correctPayment:${paymentId}`, (s) => {
         const payment = s.payments.find((p) => p.id === paymentId);
         if (!payment) return nothing(err("missing"));
         const corrected = correctPayment(payment, method, clock.now());
         if (!corrected.ok) return nothing(corrected);
         return { changes: [put({ table: "payments", record: corrected.value })], result: ok(undefined) };
+      }),
+
+    removePayment: (paymentId) =>
+      run<Result<Undo, RemoveError | "missing">>(`removePayment:${paymentId}`, (s) => {
+        const payment = s.payments.find((p) => p.id === paymentId);
+        const order = payment && orderIn(s, payment.orderId);
+        if (!payment || !order) return nothing(err("missing"));
+        const removed = removePayment(payment, order, s.lines, s.payments, clock.now());
+        if (!removed.ok) return nothing(removed);
+        const changes = [put({ table: "payments", record: removed.value })];
+        return { changes, result: ok(undoOf([put({ table: "payments", record: payment })])) };
       }),
   };
 

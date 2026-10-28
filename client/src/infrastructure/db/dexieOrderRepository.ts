@@ -72,12 +72,14 @@ function toOrderState(status: unknown, value: unknown): OrderState | undefined {
 function toPayment(r: StoredRecord): Payment | undefined {
   if (!isText(r.orderId) || !isPaise(r.amount) || r.amount === 0 || !isTime(r.receivedAt)) return undefined;
   if (r.correctedAt !== undefined && !isTime(r.correctedAt)) return undefined;
+  if (r.removedAt !== undefined && !isTime(r.removedAt)) return undefined;
   const base = {
     id: r.id as PaymentId,
     orderId: r.orderId as OrderId,
     amount: r.amount as Paise,
     receivedAt: r.receivedAt,
     ...(r.correctedAt !== undefined && { correctedAt: r.correctedAt }),
+    ...(r.removedAt !== undefined && { removedAt: r.removedAt }),
   };
   if (r.method === "cash") return { ...base, method: "cash" };
   if (r.method !== "upi" || (r.ref !== undefined && !isText(r.ref))) return undefined;

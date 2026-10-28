@@ -65,7 +65,15 @@ describe("dexieOrderRepository", () => {
   it("round-trips a billed and a settled order with their payments, and undo leaves nothing behind", async () => {
     const billed: Order = { ...order, state: { status: "billed", billedAt: 150, discount: { amount: paise(500), reason: "Regular" } } };
     const payment: Payment = { id: "p1" as PaymentId, orderId: order.id, amount: paise(1500), receivedAt: 160, method: "cash" };
-    const upi: Payment = { id: "p2" as PaymentId, orderId: order.id, amount: paise(2000), receivedAt: 170, method: "upi", correctedAt: 300 };
+    const upi: Payment = {
+      id: "p2" as PaymentId,
+      orderId: order.id,
+      amount: paise(2000),
+      receivedAt: 170,
+      method: "upi",
+      correctedAt: 300,
+      removedAt: 310,
+    };
     await dexieOrderRepository.write([
       { op: "put", table: "orders", record: billed },
       { op: "put", table: "payments", record: payment },

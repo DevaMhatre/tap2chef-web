@@ -1,18 +1,23 @@
 import {
   activeOrders,
   billOf,
+  canRemove,
+  counts,
   businessDate,
   settledOn,
   type ActiveOrder,
   type BillView,
   type OrderId,
   type OrderLine,
+  type Payment,
   type PaymentId,
+  type RemoveError,
   type SettledOrder,
 } from "../domain/order";
 import type { Result } from "../domain/result";
 import { takings, type PaymentMethod, type Takings } from "../domain/settlement";
 import type { DiningTable } from "../domain/tables";
+import type { Undo } from "./orderDesk";
 import { usePorts } from "./PortsProvider";
 import { useOrderDesk } from "./useOrderDesk";
 
@@ -43,7 +48,10 @@ export type Orders =
       /** An id for a new takeaway. Nothing is stored until its first dish. */
       newTakeaway(): OrderId;
       /** "It was UPI, not cash." Same amount, other method; the bill shows it was corrected. */
-      correctPayment(paymentId: PaymentId, method: PaymentMethod): Promise<Result<void, "unchanged" | "missing">>;
+      correctPayment(paymentId: PaymentId, method: PaymentMethod): Promise<Result<void, "unchanged" | "removed" | "missing">>;
+      /** Only an excess comes off a settled bill: `canRemove` says which. */
+      removePayment(paymentId: PaymentId): Promise<Result<Undo, RemoveError | "missing">>;
+      canRemove(bill: SettledSummary, payment: Payment): boolean;
     };
 
 export type ReadyOrders = Extract<Orders, { state: "ready" }>;
@@ -67,8 +75,10 @@ export function useOrders(): Orders {
     earlier: all.filter((a) => a.order.businessDate < today),
     today: all.filter((a) => a.order.businessDate >= today),
     settled,
-    takings: takings(settled.flatMap((s) => s.bill.payments)),
+    takings: takings(settled.flatMap((s) => s.bill.payments.filter(counts))),
     newTakeaway: () => ids.newId() as OrderId,
     correctPayment: commands.correctPayment,
+    removePayment: commands.removePayment,
+    canRemove: (bill, payment) => canRemove(payment, bill.order, bill.bill),
   };
 }

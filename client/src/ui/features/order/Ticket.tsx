@@ -1,3 +1,4 @@
+import type { Paise } from "../../../domain/money";
 import type { OrderLine } from "../../../domain/order";
 import { lineTotal } from "../../../domain/order";
 import type { ReadyOrder } from "../../../usecases/useOrder";
@@ -20,6 +21,7 @@ type Props = {
 // cart, right above Send.
 export function Ticket({ screen, onStep, onEditDraft, onVoid }: Props) {
   const { rounds, draft, total } = screen.ticket;
+  const { bill } = screen;
 
   if (rounds.length === 0 && draft.length === 0) {
     return <p className="rounded-2xl bg-surface px-4 py-6 text-center text-[15px] text-muted">Tap a dish to add it.</p>;
@@ -60,9 +62,30 @@ export function Ticket({ screen, onStep, onEditDraft, onVoid }: Props) {
         </ListSection>
       )}
 
-      <div className="flex items-baseline justify-between px-4">
-        <span className="text-[17px] font-semibold">Total</span>
-        <span className="text-[28px] font-bold tracking-tight tabular-nums">{formatPrice(total)}</span>
+      <div className="space-y-1 px-4">
+        <div className="flex items-baseline justify-between">
+          <span className="text-[17px] font-semibold">Total</span>
+          <span className="text-[28px] font-bold tracking-tight tabular-nums">{formatPrice(total)}</span>
+        </div>
+        {/* Once the bill is out, what the guest still owes, not only what the dishes came to. */}
+        {bill.discount && (
+          <div className="flex justify-between text-[15px] text-muted">
+            <span>Discount{bill.discount.reason && ` · ${bill.discount.reason}`}</span>
+            <span className="tabular-nums">−{formatPrice(bill.discount.amount)}</span>
+          </div>
+        )}
+        {bill.paid > 0 && (
+          <div className="flex justify-between text-[15px] text-muted">
+            <span>Paid</span>
+            <span className="tabular-nums">−{formatPrice(bill.paid)}</span>
+          </div>
+        )}
+        {(bill.discount || bill.paid > 0) && (
+          <div className="flex items-baseline justify-between pt-1">
+            <span className="text-[17px] font-semibold">To pay</span>
+            <span className="text-[20px] font-bold tabular-nums">{formatPrice(Math.max(0, bill.remaining) as Paise)}</span>
+          </div>
+        )}
       </div>
     </div>
   );
