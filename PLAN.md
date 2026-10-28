@@ -72,7 +72,7 @@ A feature is marked `[x]` only when **all** of these hold:
 - [x] 5e Cancel a sent dish (part or all, optional reason, undo); move an order to a free table — `e501b07`, `52c906a`
 - [ ] Owner test: the restaurant runs one real lunch on it
 
-### 6. Bill settlement — 6f open; 6d after the owner test (a table frees only when its bill settles)
+### 6. Bill settlement ✓ (6d after the owner test) (a table frees only when its bill settles)
 Brainstormed 2026-10-29 against Toast, Square and Petpooja. The discount is in; 6d waits for the owner test.
 - [x] 6a Domain: `settled` arm on the order state (payments + optional adjustment), exact-sum rule, payment-method correction — `cf54125`
 - [x] 6b Bill sheet (first version, one-tap Cash / UPI) — `6c6422f`, `0b344ad`, `abfa74c`
@@ -80,7 +80,7 @@ Brainstormed 2026-10-29 against Toast, Square and Petpooja. The discount is in; 
 - [x] 6e **Bill first, then money** (rework of 6b/6c after a real-life walkthrough): Send → **Bill** (table turns amber, "Bill · 4 min", Tables shows "₹… waiting to be paid") → bill sheet: choose Cash or UPI (nothing preselected), amount pre-filled with what's left, one **Settle ₹X** button (or **Received ₹X** for a part) → a completion moment over the floor → Undo. Payments are records; part payments add up; a ₹0 bill has Close bill. Settled today is one summary row → its own screen; each payment's method can be corrected — `73ee9e4`
 - [x] 6g Remove a wrong payment after Undo has gone (two devices took the whole bill, or a typo); it stays listed, struck through — `c2c9b67`
 - [x] Polish: the desktop order panel shows the discount, what's paid and what's still to pay — `c2c9b67`
-- [ ] 6f Menu: collapsible categories on the Menu tab (4+ categories start collapsed; jump chips go); the order screen stays fully open
+- [x] 6f Menu: collapsible categories on the Menu tab (4+ categories start collapsed; jump chips go); the order screen stays fully open — `008e4dc`
 - [ ] 6d UPI QR with the exact amount, drawn on the device from the owner's UPI ID, offline, no gateway; staff tap "Received". **After the owner test.**
 
 Said no to: split by seat / by item / evenly (several payments per bill covers it), promotions engine, reopening a settled bill.
@@ -124,6 +124,7 @@ Newest change first within each group. Format: decision — reason (date).
 - Duplicate names are a warning, never a rule — two offline devices can always create the same name (2026-10-29).
 - Fractional sort keys: a move is one write; ties (offline appends) break by id and are repaired by re-keying (2026-10-29).
 - Deleting a category takes its dishes with it, with undo; the last price list can't be removed (2026-10-29).
+- Categories fold on the Menu tab: each is a card row ("Mains · 12"), Edit shows only while open, 4 or more start folded, and a category that gains a dish opens itself; the jump chips go. The order screen never folds — speed beats overview there (2026-10-29).
 - Drag-to-reorder deferred: dishes appear in typing order, which follows the printed menu (2026-10-29).
 
 ### Orders
@@ -213,3 +214,4 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 - **2026-10-29** — 6a committed (`cf54125`). 6b built in four layers, checked in Chrome at 360 / 820 / 1440 in light and dark and offline; double-tap settles once, undo reopens.
 - **2026-10-29** — 6b committed. 6c built: Settled today with takings by drawer, paid-bill sheet, payment correction; checked at 360 / 820 / 1440 light and dark.
 - **2026-10-29** — 6c committed. The user challenged the one-tap settle against real life; walked the counter workflow, studied Toast / Petpooja / Apple HIG, and rebuilt as 6e: bill first, then money; payments as records; deliberate Settle with a completion moment; Settled today as a drill-in. Caught on the way: a discount agreed with a part payment was lost on reopening; the completion moment was cut short when a takeaway's screen changed.
+- **2026-10-29** — LEARNINGS.md started. 6g (remove a wrong payment) and 6f (folding Menu categories) built, browser-checked at four sizes, committed. Step 6 complete; 6d waits for the owner test; owner test of steps 5–6 and real-iPhone sheet check still open.

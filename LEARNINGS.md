@@ -81,6 +81,14 @@ wrong and how we now avoid it**.
   smaller text, and put what needs attention first ("₹410 extra · Cash + UPI"),
   so that if anything gets cut, it's the least important part.
 
+**5. A collapsed section must still look like something to tap** (2026-10-29)
+- *What happened:* The first collapsible Menu put chevrons on the small grey
+  section labels. Collapsed, it read as a column of captions, with four red
+  "Edit"s competing for attention.
+- *Apply:* a folding section is a card whose first row is the header (17px,
+  with a leading chevron and a quiet count). Its actions show only while it is
+  open. Judge the closed state in a screenshot, not just the open one.
+
 ## Data and state
 
 **1. Anything two devices can add to is its own record** (2026-10-29)
