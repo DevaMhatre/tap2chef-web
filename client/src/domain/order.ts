@@ -127,7 +127,8 @@ export function addToDraft(
   };
 }
 
-export type LineEditError = "notDraft" | "notSent" | "outOfRange" | "tooLong";
+/** `settled`: the bill is closed; nothing on it changes any more. */
+export type LineEditError = "notDraft" | "notSent" | "outOfRange" | "tooLong" | "settled";
 
 /** Only a line still in the cart can change; the kitchen already has the rest. */
 export function withQuantity(line: OrderLine, quantity: number): Result<OrderLine, LineEditError> {

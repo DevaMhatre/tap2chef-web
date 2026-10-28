@@ -5,6 +5,7 @@ import {
   changeFor,
   discountTo,
   fullPayment,
+  quoteBill,
   splitPayment,
   tenderOptions,
   validateBill,
@@ -109,5 +110,41 @@ describe("change", () => {
     expect(changeFor(rupees(890), rupees(1000))).toBe(rupees(110));
     expect(changeFor(rupees(890), rupees(890))).toBe(0);
     expect(changeFor(rupees(890), rupees(500))).toBeUndefined();
+  });
+});
+
+describe("quoteBill", () => {
+  const empty = { finalAmount: "", reason: "", cash: "" };
+
+  it("is the whole bill until something is typed", () => {
+    expect(quoteBill(rupees(890), empty)).toEqual({
+      subtotal: rupees(890),
+      due: rupees(890),
+      discount: { ok: true, value: undefined },
+      tender: [rupees(900), rupees(1000), rupees(2000)],
+      change: undefined,
+      split: { ok: false, error: "empty" },
+    });
+  });
+
+  it("discounts to the typed amount and quotes everything from it", () => {
+    const quote = quoteBill(rupees(890), { ...empty, finalAmount: "850", reason: "Regular", given: rupees(1000) });
+    expect(quote).toMatchObject({ due: rupees(850), discount: { ok: true, value: { amount: rupees(40), reason: "Regular" } } });
+    expect(quote.change).toBe(rupees(150));
+  });
+
+  it("keeps the full bill while the typed amount is wrong", () => {
+    expect(quoteBill(rupees(890), { ...empty, finalAmount: "9oo" })).toMatchObject({ due: rupees(890), discount: { error: "invalid" } });
+    expect(quoteBill(rupees(890), { ...empty, finalAmount: "900" })).toMatchObject({ due: rupees(890), discount: { error: "upward" } });
+  });
+
+  it("splits from the cash typed", () => {
+    expect(quoteBill(rupees(890), { ...empty, cash: "500" }).split).toEqual({ ok: true, value: [cash(500), upi(390)] });
+    expect(quoteBill(rupees(890), { ...empty, cash: "5oo" }).split).toEqual({ ok: false, error: "invalid" });
+    expect(quoteBill(rupees(890), { ...empty, finalAmount: "850", cash: "860" }).split).toEqual({ ok: false, error: "moreThanDue" });
+  });
+
+  it("has no change when the note is too small", () => {
+    expect(quoteBill(rupees(890), { ...empty, given: rupees(500) }).change).toBeUndefined();
   });
 });
