@@ -73,8 +73,10 @@ A feature is marked `[x]` only when **all** of these hold:
 ### 6. Bill settlement ✓ (6d after the owner test) (a table frees only when its bill settles)
 Brainstormed 2026-10-29 against Toast, Square and Petpooja. The discount is in; 6d waits for the owner test.
 - [x] 6a Domain: `settled` arm on the order state (payments + optional adjustment), exact-sum rule, payment-method correction — `cf54125`
-- [x] 6b Bill sheet: primary button is Send while anything is unsent, then Settle; one-tap Cash / UPI for the full amount; Split = type cash, UPI fills the rest (sum is exact by construction); cash change chips (₹900 · ₹1000 · ₹2000 → "Change ₹110"); adjust by typing the final amount ("make it ₹850"), recorded as a discount with optional reason, only downward — `6c6422f`, `0b344ad`, `abfa74c`
-- [x] 6c Orders tab: "Settled today" with the day's total; a settled bill never reopens (undo within 5 s only), but its payment method can be corrected — `681c009`, `de83682`, `d9be4fb`
+- [x] 6b Bill sheet (first version, one-tap Cash / UPI) — `6c6422f`, `0b344ad`, `abfa74c`
+- [x] 6c Settled today, payment correction (first version) — `681c009`, `de83682`, `d9be4fb`
+- [x] 6e **Bill first, then money** (rework of 6b/6c after a real-life walkthrough): Send → **Bill** (table turns amber, "Bill · 4 min", Tables shows "₹… waiting to be paid") → bill sheet: choose Cash or UPI (nothing preselected), amount pre-filled with what's left, one **Settle ₹X** button (or **Received ₹X** for a part) → a completion moment over the floor → Undo. Payments are records; part payments add up; a ₹0 bill has Close bill. Settled today is one summary row → its own screen; each payment's method can be corrected — `73ee9e4`
+- [ ] 6f Menu: collapsible categories on the Menu tab (4+ categories start collapsed; jump chips go); the order screen stays fully open
 - [ ] 6d UPI QR with the exact amount, drawn on the device from the owner's UPI ID, offline, no gateway; staff tap "Received". **After the owner test.**
 
 Said no to: split by seat / by item / evenly (several payments per bill covers it), promotions engine, reopening a settled bill.
@@ -140,22 +142,27 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 - Phones and tablets in portrait: the order is a bar under the thumb with Send on it; from 1024px the ticket sits beside the menu (2026-10-29).
 
 ### Bills
+- Bill first, then money: the order goes open → billed → settled. "Bill" hands it over and the table waits to pay (amber); the money comes after, maybe in parts. One more dish takes the table back to open — real counters work this way, and it ends forgotten "printed, unpaid" bills (2026-10-29).
+- Payments are records of their own, never a list on the order — two devices taking parts of one bill both count; if both take it all, the bill shows "extra received" instead of losing one (2026-10-29).
+- The payment that leaves nothing to pay settles the bill; settling is never a separate step to forget (2026-10-29).
+- Cash and UPI only choose (Apple: a segmented control never acts); one filled **Settle ₹X** commits, then a completion moment (check, amount, "Hand back ₹200") for about a second over the floor, then Undo — a conscious step, and the feeling of a job done (2026-10-29).
 - A discount is typed as the final amount ("make it ₹850"), only downward, reason optional; no percentages, coupons or promotions engine. It covers rounding off and a regular's discount (2026-10-29).
 - The on-device UPI QR (6d) waits for the owner test. If they already have a payment speaker and a printed QR, it adds little (2026-10-29).
 
 - A settled bill keeps its `subtotal` snapshot; the day's numbers read payments, never re-add lines (2026-10-29).
-- Settle refuses while a dish is unsent; staff Send or remove it first, never an automatic choice (2026-10-29).
-- A payment correction changes the method, never the amount, and stamps `correctedAt` so a cash bill turned UPI stays visible to the owner (2026-10-29).
-- The bill sheet's commits are two equal tiles, Cash and UPI, each one tap; split and discount are plain links that open in place. "Round off or discount", never "Change amount": "change" already means the cash handed back (2026-10-29).
-- A settle is checked against the stored dishes, not the screen's: if another tab changed the bill, it refuses and says so rather than charging for what staff didn't see (2026-10-29).
-- Undoing a settle does nothing once the table has a new order or the payment was corrected (2026-10-29).
+- Bill refuses while a dish is unsent; staff Send or remove it first, never an automatic choice (2026-10-29).
+- A correction changes one payment's method, never its amount, and stamps `correctedAt` so cash turned UPI stays visible to the owner (2026-10-29).
+- "Round off or discount", never "Change amount": "change" already means the cash handed back. A discount agreed with a part payment stays agreed when the sheet reopens (2026-10-29).
+- A payment is checked against the stored dishes and payments, not the screen's: if another tab changed the bill, it refuses and says so rather than charging for what staff didn't see (2026-10-29).
+- Undo takes a payment back and reopens the bill it closed — not once the table has a new order (2026-10-29).
 - A paid takeaway's link shows "Token N is paid"; a dish tapped onto a table settled elsewhere starts the table's next order (2026-10-29).
-- "Settled today" shows the total with cash and UPI under it — the cash box check at closing; the full day's numbers stay step 7 (2026-10-29).
+- "Settled today" is one summary row (total, cash, UPI) that opens its own screen — the Orders tab keeps only live work; Apple uses drill-in for history and disclosure only for details (2026-10-29).
 - A paid bill counts on its order's business day, like its token; one left open overnight belongs to the evening it was served (2026-10-29).
 - A corrected bill says "corrected" in the list and when, in the sheet (2026-10-29).
-- Change chips: next ₹50 (bills under ₹1000), ₹100, ₹500, ₹1000, ₹2000 above the amount due, first three (2026-10-29).
+- No change chips (cashiers count change in their heads): staff type the cash received and the change shows; UPI is exact (2026-10-29).
 
 ### Design
+- Crowding: history is a summary row you tap into (Wallet, Settings); collapsible sections only where the owner edits (Menu tab), never on the order screen, where every dish must be one tap away (2026-10-29).
 - Sheet actions: a **filled** pill commits (Save, Add), a **tinted** pill closes (Done), plain text leaves (Cancel) — never two filled buttons competing (2026-10-29).
 - Forgiveness over confirmation: destructive actions act at once with Undo (2026-10-29).
 - Calm confirmation (a tick, a haptic, a line where the eye already is), no confetti — 80 dishes of confetti is noise; save celebration for real milestones (2026-10-29).
@@ -167,6 +174,9 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 ## Open questions
 
 **For the restaurant owner**
+- Who takes the money: the counter, or the waiter at the table? Do you print the bill today?
+- Do regulars pay later ("likh lo")? How do you keep track? → decides a "pay later" method.
+- Do friends split one bill across several UPI payments?
 - Do you charge GST on the bill; are you GST-registered? → tax lines and sequential bill numbers (two offline devices could collide on them).
 - How do customers pay UPI today: printed QR, payment speaker, or your own phone? → decides 6d.
 - How often do you discount or round off a bill, and who decides?
@@ -197,3 +207,4 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 - **2026-10-29** — Step 5 committed on branch `step-5-orders` (5 commits, each typechecks and passes tests). Step 6 brainstormed; proposal and two open choices recorded above.
 - **2026-10-29** — 6a committed (`cf54125`). 6b built in four layers, checked in Chrome at 360 / 820 / 1440 in light and dark and offline; double-tap settles once, undo reopens.
 - **2026-10-29** — 6b committed. 6c built: Settled today with takings by drawer, paid-bill sheet, payment correction; checked at 360 / 820 / 1440 light and dark.
+- **2026-10-29** — 6c committed. The user challenged the one-tap settle against real life; walked the counter workflow, studied Toast / Petpooja / Apple HIG, and rebuilt as 6e: bill first, then money; payments as records; deliberate Settle with a completion moment; Settled today as a drill-in. Caught on the way: a discount agreed with a part payment was lost on reopening; the completion moment was cut short when a takeaway's screen changed.
