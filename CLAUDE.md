@@ -15,7 +15,55 @@ queue, bill settlement (cash / UPI split), daily expenses and the day's numbers.
   WatermelonDB) proved the flow. This repo is the web/PWA product; the prototype
   is reference only — its data model shaped ours, its code is not reused.
 - **Server:** Express + MongoDB, auth/roles/validation/tests carried over from the
-  founder's `pos-inventory-managment` project. Roles: `owner`, `staff`.
+  founder's `pos-inventory-managment` project.
+- **Ambition:** the state-of-the-art product for small restaurants. We think big
+  from day one and build the first user's daily flow first.
+- **The niche is the strategy.** Small-scale restaurants: one owner, a handful
+  of staff, maybe two or three outlets — not franchise chains. Every feature
+  solves a real problem of this business: the rush hour, the cash drawer, the
+  waiter on a cheap phone, the owner reading the day's numbers at midnight.
+
+### Inspiration, never imitation
+We study what the market already does (Toast, Square, Shopify, Petpooja, Linear)
+to learn what the industry has learned. We never copy. Every borrowed idea passes
+two filters:
+1. **Does it solve a real problem for a small restaurant?** Chain-scale power
+   (menu versioning, corporate ownership trees) fails this test, so we leave it out.
+2. **Can we make it state of the art?** Simpler, faster and calmer than where we
+   found it. If we can only match it, rethink it.
+
+### SaaS from day one
+Tap2Chef is a subscription product. Multi-tenancy is in the data model now,
+even while billing and login come later.
+
+```
+Account   (the subscriber; plan, billing)    ← an owner pays and becomes its admin
+ └─ Shop  (one restaurant outlet)            ← an owner can run several
+     └─ Members (users with a role here)     ← staff work in one or more shops
+```
+
+- **Menu is account-level; shops inherit it.** One catalog per account. A new
+  shop gets the whole menu on day one and stores only its differences (a price,
+  "not sold here") as sparse overrides. One level of inheritance, nothing more.
+  A single-shop owner never sees any of it.
+- **Permissions, not role names.** Code asks `can(member, 'menu.edit', shopId)`,
+  never `role === 'manager'`. `owner` / `manager` / `staff` are preset bundles of
+  permissions (data, not code), so custom roles later need no code change. A
+  membership is (user, one shop or all shops, role); the owner has everything.
+  Permission rules are pure domain functions.
+- **Two kinds of identity.** The owner signs a device in once (email/OTP); staff
+  switch on a shared device with a personal 4-digit PIN.
+- **Scoping:** account-level records (shops, members, menu catalog, subscription)
+  carry `accountId`; shop-level records (overrides, tables, orders, expenses)
+  carry `accountId` + `shopId`. On the server, one enforced gate refuses any
+  query without `accountId`, with tests that prove one tenant can't read
+  another's data.
+- **Device:** signed into one account, working in one shop at a time. Its local
+  database holds only what the signed-in member is allowed to see, and the
+  server decides that. Domain and use cases never see `accountId` or `shopId`;
+  the composition root scopes the ports.
+- **Subscription vs offline:** a lapsed or unreachable licence never blocks
+  taking an order mid-service. Entitlements are cached with a grace period.
 
 ### Platform
 Offline-first PWA, responsive on every platform: phone (bottom tabs), tablet and
@@ -34,11 +82,15 @@ desktop (sidebar). Installable; must open and work with no internet.
 
 ## Design North Star
 
-Build it as if Apple's senior product designers made a restaurant app.
-Follow Apple's Human Interface Guidelines in spirit: clarity, deference, depth.
+Build it the way Steve Jobs built products: as if he were designing and
+developing Tap2Chef himself. Ruthless focus, simplicity that comes from deep
+understanding, care for the parts nobody sees, and the whole product working as
+one. Follow Apple's Human Interface Guidelines in spirit: clarity, deference,
+depth. Every feature passes the **Steve Jobs Product Test** (below) before it is
+done.
 
-> Never put Apple's name, logos or "designed by Apple" in the product, store
-> listing or marketing. The bar is Apple-quality; the brand is Tap2Chef.
+> Never put Apple's or Steve Jobs' name, logos or likeness in the product, store
+> listing or marketing. That is the bar we hold ourselves to; the brand is Tap2Chef.
 
 - **Content first.** Big, tabular-figure numbers; quiet chrome; no heavy shadows
   or decoration. If an element doesn't help the owner act, remove it.
@@ -72,7 +124,7 @@ of what?"** Modules exist to isolate change.
   change past bills.
 - Order status only moves forward: draft → cooking → served → settled.
 - A bill settles only when payments sum **exactly** to the total.
-- Every record belongs to a tenant.
+- Every record belongs to an account; shop-level records also belong to a shop.
 
 ### Tap2Chef variation points
 - Order channel: `{ type: 'dineIn'; table } | { type: 'takeaway'; token }` (delivery later = new arm).
@@ -130,7 +182,9 @@ type Order = { status: string; servedAt?: number | null; payments?: Payment[] | 
 - Writes go through `save()` / `remove()` in `infrastructure/db/repo.ts` so every
   change lands in the outbox in the same transaction.
 - Records carry `id` (generated on device), `tenantId`, `createdAt`,
-  `updatedAt`, `deleted` (soft delete). Sync conflict rule: latest `updatedAt` wins.
+  `updatedAt`, `deleted` (soft delete). Sync conflict rule: last write wins, in
+  the **server's arrival order**, never device clocks (cheap phones often show
+  the wrong time). Clients pull "changes since sync number N", not by timestamp.
 
 ### UI (`src/ui/`)
 - Three jobs only: display state, forward gestures, own visual-only state.
@@ -195,6 +249,30 @@ React Context is the channel; no prop drilling 3+ levels.
 
 ---
 
+## The Steve Jobs Product Test
+
+Run after every feature, before calling it done. Report the result honestly,
+including what failed and what was cut. Each question needs a concrete answer,
+not a yes.
+
+0. **Real problem.** Which real problem of a small restaurant does this solve,
+   and how do they cope with it today? If we can't name it, don't build it.
+1. **Focus.** What did we say no to? What can still be removed without loss?
+2. **Simplicity.** Could the restaurant owner use it first time, mid-rush, with
+   no explanation? Where would they hesitate?
+3. **It just works.** No setup, no configuration, no "sync first". Works offline,
+   on a cheap Android phone, on the first try.
+4. **Taps.** Count the taps for the main job. Can any be removed?
+5. **The back of the fence.** Empty states, errors, ₹0, very long names,
+   offline mid-action, two devices, dark mode, 360px. Polished where nobody
+   looks.
+6. **Feel.** Every tap answers instantly; motion and haptics feel natural.
+7. **One product.** Consistent with every other screen. Nothing feels bolted on.
+8. **Stage test.** Would we demo it on a stage, unrehearsed, with pride?
+   If not, it isn't done.
+
+---
+
 ## Anti-Patterns
 
 | Anti-pattern | Fix |
@@ -251,5 +329,6 @@ Before reporting work complete: typecheck, lint, tests and build all pass.
 5. Table grid and orders (fire → cooking → served)
 6. Bill settlement (cash / UPI split)
 7. Expenses and the day's dashboard
-8. Real login and sync
+8. Accounts, shops, members and real login; sync
+   (subscriptions and billing follow)
 9. Printing / KOT
