@@ -1,12 +1,14 @@
+import { useState } from "react";
 import { MdAdd, MdReceiptLong, MdShoppingBag, MdTableRestaurant } from "react-icons/md";
 import { dishCount } from "../../domain/order";
 import { useNavigate } from "react-router";
-import { useOrders, type OrderSummary } from "../../usecases/useOrders";
+import { useOrders, type OrderSummary, type SettledSummary } from "../../usecases/useOrders";
 import { Button } from "../design-system/Button";
 import { ListRow, ListSection } from "../design-system/GroupedList";
 import { PageHeader } from "../design-system/PageHeader";
-import { shortOrderTitle } from "../features/order/labels";
-import { formatPrice, formatSentAgo } from "../format";
+import { paidByLabel, shortOrderTitle } from "../features/order/labels";
+import { SettledSheet } from "../features/order/SettledSheet";
+import { formatPrice, formatSentAgo, formatTime } from "../format";
 import { useNow } from "../useNow";
 
 // Every order with something on it, dine-in apart from takeaway, each oldest
@@ -15,6 +17,8 @@ export default function OrdersPage() {
   const orders = useOrders();
   const navigate = useNavigate();
   const now = useNow();
+  // Visual-only state: which paid bill is open.
+  const [viewing, setViewing] = useState<OrderSummary["order"]["id"] | null>(null);
 
   if (orders.state === "loading") return <PageHeader title="Orders" />;
 
@@ -52,6 +56,38 @@ export default function OrdersPage() {
       </ListRow>
     );
   };
+  const paidRow = (bill: SettledSummary) => {
+    const { state } = bill.order;
+    const Icon = bill.order.channel.type === "takeaway" ? MdShoppingBag : MdTableRestaurant;
+    const detail = [
+      paidByLabel(state.bill.payments),
+      state.bill.discount && `${formatPrice(state.bill.discount.amount)} off`,
+      state.correctedAt && "corrected",
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    return (
+      <ListRow
+        key={bill.order.id}
+        detail={detail}
+        leading={
+          <span aria-hidden className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-surface-2 text-xl text-muted">
+            <Icon />
+          </span>
+        }
+        trailing={
+          <span className="shrink-0 text-right">
+            <span className="block text-[17px] tabular-nums text-muted">{formatPrice(bill.paid)}</span>
+            <span className="block text-[13px] text-muted">{formatTime(state.settledAt)}</span>
+          </span>
+        }
+        onClick={() => setViewing(bill.order.id)}
+      >
+        {shortOrderTitle(bill.label)}
+      </ListRow>
+    );
+  };
+  const { settled, takings } = orders;
   const dineIn = orders.today.filter((o) => o.order.channel.type === "dineIn");
   const takeaway = orders.today.filter((o) => o.order.channel.type === "takeaway");
   const newTakeaway = () => navigate(`/orders/${orders.newTakeaway()}`);
@@ -66,7 +102,7 @@ export default function OrdersPage() {
           </Button>
         }
       />
-      {orders.earlier.length === 0 && orders.today.length === 0 ? (
+      {orders.earlier.length === 0 && orders.today.length === 0 && settled.length === 0 ? (
         <div className="flex min-h-[50dvh] flex-col items-center justify-center text-center">
           <MdReceiptLong className="mb-3 text-5xl text-muted/60" aria-hidden />
           <p className="text-[17px] font-semibold">No open orders</p>
@@ -83,8 +119,18 @@ export default function OrdersPage() {
           {takeaway.length > 0 && (
             <ListSection header={`Takeaway · ${takeaway.length}`}>{takeaway.map(row)}</ListSection>
           )}
+          {settled.length > 0 && (
+            <ListSection
+              header={`Settled today · ${settled.length}`}
+              headerAction={<span className="text-[15px] font-semibold tabular-nums">{formatPrice(takings.total)}</span>}
+              footer={`Cash ${formatPrice(takings.cash)} · UPI ${formatPrice(takings.upi)}`}
+            >
+              {settled.map(paidRow)}
+            </ListSection>
+          )}
         </div>
       )}
+      <SettledSheet bill={settled.find((s) => s.order.id === viewing) ?? null} orders={orders} onClose={() => setViewing(null)} />
     </section>
   );
 }
