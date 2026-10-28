@@ -1,26 +1,29 @@
-import { useRef, useState, type ReactNode } from "react";
-import { MdCallSplit, MdPayments, MdQrCode2 } from "react-icons/md";
-import type { Paise } from "../../../domain/money";
+import { useRef, useState } from "react";
+import { toRupeeText, type Paise } from "../../../domain/money";
 import { dishCount } from "../../../domain/order";
-import type { BillInput } from "../../../domain/settlement";
+import type { BillInput, PaymentMethod } from "../../../domain/settlement";
 import type { Undo } from "../../../usecases/orderDesk";
-import type { PayBy, ReadyOrder } from "../../../usecases/useOrder";
+import type { ReadyOrder } from "../../../usecases/useOrder";
 import { Button } from "../../design-system/Button";
 import { TextField } from "../../design-system/Field";
+import { ListSection } from "../../design-system/GroupedList";
+import { haptic } from "../../design-system/haptic";
+import { SegmentedControl } from "../../design-system/SegmentedControl";
 import { Sheet } from "../../design-system/Sheet";
-import { formatPrice } from "../../format";
-import { orderTitle } from "./labels";
+import { useUndoToast } from "../../design-system/UndoToast";
+import { formatPrice, formatTime } from "../../format";
+import { METHOD_LABEL, orderTitle } from "./labels";
 
 type Props = {
   open: boolean;
   screen: ReadyOrder;
   onClose: () => void;
-  /** Settled: the sheet's job is done. `undo` reopens the bill for a few seconds. */
-  onSettled: (paid: Paise, undo: Undo) => void;
+  /** Settled: the job is done. `undo` reopens the bill for a few seconds. */
+  onSettled: (settled: Settled) => void;
 };
 
-// The guest is waiting with money in hand: the amount is the biggest thing
-// on screen, and Cash or UPI settles it in one tap.
+// The guest has the bill; money comes in, maybe in parts. Choosing Cash or
+// UPI only chooses. Settling is its own button that says what it will do.
 export function BillSheet({ open, screen, onClose, onSettled }: Props) {
   return (
     <Sheet open={open} onClose={onClose} title={orderTitle(screen.label)} dismissLabel="Back">
@@ -29,49 +32,93 @@ export function BillSheet({ open, screen, onClose, onSettled }: Props) {
   );
 }
 
-const EMPTY: BillInput = { finalAmount: "", reason: "", cash: "" };
+
+const METHODS: { value: PaymentMethod; label: string }[] = [
+  { value: "cash", label: METHOD_LABEL.cash },
+  { value: "upi", label: METHOD_LABEL.upi },
+];
+
+export type Settled = { paid: Paise; method: string; change: Paise; undo: Undo };
 
 function BillForm({ screen, onSettled, onClose }: Omit<Props, "open">) {
-  // Visual-only state: what has been typed, and which parts are showing.
-  const [input, setInput] = useState<BillInput>(EMPTY);
-  const [adjusting, setAdjusting] = useState(false);
-  const [splitting, setSplitting] = useState(false);
+  // Visual-only state: what has been typed, which parts are showing.
+  const [input, setInput] = useState<BillInput>(screen.billInput);
+  const [adjusting, setAdjusting] = useState(screen.billInput.finalAmount !== "");
   const [failure, setFailure] = useState<string>();
-  const settling = useRef(false);
+  const busy = useRef(false);
+  const showUndo = useUndoToast();
 
   const quote = screen.quote(input);
-  const { subtotal, due, discount } = quote;
-  const amountError = !discount.ok && discount.error !== "tooLong" ? AMOUNT_ERRORS[discount.error](subtotal) : undefined;
-  const reasonError = !discount.ok && discount.error === "tooLong" ? "Keep it short." : undefined;
+  const { subtotal, due, paid, remaining, discount, receipt, settles } = quote;
+  const { payments } = screen.bill;
   const edit = (patch: Partial<BillInput>) => setInput((current) => ({ ...current, ...patch }));
+  // Choosing a method fills in what is left: the usual case is one tap away
+  // from Settle, and a part payment is one edit away.
+  const choose = (method: PaymentMethod) =>
+    edit({ method, received: input.received === "" && remaining > 0 ? toRupeeText(remaining as Paise) : input.received });
 
-  async function settle(by: PayBy) {
-    if (settling.current) return;
-    settling.current = true;
+  const amountError = !discount.ok ? DISCOUNT_ERRORS[discount.error]?.(subtotal, paid) : undefined;
+  const reasonError = !discount.ok && discount.error === "tooLong" ? "Keep it short." : undefined;
+  const receivedError =
+    receipt && !receipt.ok && receipt.error !== "empty" ? RECEIVED_ERRORS[receipt.error](remaining as Paise, input.method!) : undefined;
+
+  async function commit(action: "receive" | "close") {
+    if (busy.current) return;
+    busy.current = true;
     try {
       setFailure(undefined);
-      const result = await screen.settle(input, by);
-      if (result.ok) return onSettled(due, result.value);
-      // Already settled: a repeated tap, or another tab got there first.
-      if (result.error === "settled" || result.error === "empty") return onClose();
-      if (result.error === "notExact" || result.error === "unsent") {
-        setFailure("This bill just changed on another screen. Check the total and try again.");
+      if (action === "close") {
+        const result = await screen.closeBill(input);
+        if (result.ok) {
+          return onSettled({ paid, method: "Nothing to pay", change: 0 as Paise, undo: result.value });
+        }
+        return explain(result.error);
       }
+      const method = input.method!;
+      const result = await screen.receive(input);
+      if (!result.ok) return explain(result.error);
+      const { settled, undo, change } = result.value;
+      if (settled) {
+        const methods = new Set([...payments.map((p) => p.method), method]);
+        return onSettled({ paid: due, method: methods.size > 1 ? "Cash + UPI" : METHOD_LABEL[method], change, undo });
+      }
+      // A part: the sheet stays, ready for the rest.
+      haptic();
+      showUndo(`${METHOD_LABEL[method]} ${formatPrice(receipt!.ok ? receipt!.value.amount : (0 as Paise))} received`, undo);
+      setInput((current) => ({ ...current, method: null, received: "" }));
     } catch {
       setFailure("Couldn't save on this device. Try again.");
     } finally {
-      settling.current = false;
+      busy.current = false;
     }
   }
 
+  function explain(error: string) {
+    // Settled or gone on another screen: nothing left to do here.
+    if (error === "notBilled" || error === "missing") return onClose();
+    setFailure(
+      error === "unsent"
+        ? "A dish was added. Send it to the kitchen first."
+        : error === "overpaid"
+          ? "More than the bill has been received. Check the payments."
+          : "This bill just changed on another screen. Check the amount and try again.",
+    );
+  }
+
   const dishes = dishCount(screen.ticket.rounds.flatMap((r) => r.lines));
+  const nothingLeft = discount.ok && remaining === 0;
+  const label = receipt?.ok && !settles ? `Received ${formatPrice(receipt.value.amount)}` : `Settle ${formatPrice(Math.max(0, remaining) as Paise)}`;
 
   return (
     <div className="space-y-6">
       <section className="pt-2 text-center">
-        <p className="text-[44px] leading-none font-bold tracking-tight tabular-nums">{formatPrice(due)}</p>
+        <p className="text-[44px] leading-none font-bold tracking-tight tabular-nums">{formatPrice(Math.max(0, remaining) as Paise)}</p>
         <p className="mt-2 text-[15px] text-muted">
-          {discount.ok && discount.value ? (
+          {paid > 0 ? (
+            <>
+              to go · <span className="tabular-nums">{formatPrice(paid)}</span> of {formatPrice(due)} paid
+            </>
+          ) : discount.ok && discount.value ? (
             <>
               <span className="tabular-nums line-through">{formatPrice(subtotal)}</span> · {formatPrice(discount.value.amount)} off
               {discount.value.reason && ` · ${discount.value.reason}`}
@@ -95,7 +142,7 @@ function BillForm({ screen, onSettled, onClose }: Omit<Props, "open">) {
             inputMode="decimal"
             autoComplete="off"
             autoFocus
-            placeholder={formatPrice(subtotal).replace("₹", "")}
+            placeholder={toRupeeText(subtotal)}
             value={input.finalAmount}
             error={amountError}
             hint="The difference is recorded as a discount."
@@ -113,133 +160,76 @@ function BillForm({ screen, onSettled, onClose }: Omit<Props, "open">) {
         </div>
       )}
 
+      {payments.length > 0 && (
+        <ListSection header="Received">
+          {payments.map((p) => (
+            <div key={p.id} className="flex min-h-11 items-center justify-between px-4 py-2 text-[17px]">
+              <span>
+                {METHOD_LABEL[p.method]} <span className="text-[15px] text-muted">· {formatTime(p.receivedAt)}</span>
+              </span>
+              <span className="tabular-nums">{formatPrice(p.amount)}</span>
+            </div>
+          ))}
+        </ListSection>
+      )}
+
       {failure && <p className="rounded-xl bg-primary/12 px-4 py-3 text-[15px] font-medium text-primary">{failure}</p>}
 
-      {due === 0 ? (
-        <Button className="w-full" disabled={!discount.ok} onClick={() => settle("cash")}>
+      {nothingLeft ? (
+        <Button className="w-full" onClick={() => commit("close")}>
           Close bill
         </Button>
-      ) : splitting ? (
-        <Split screen={screen} input={input} edit={edit} onSettle={() => settle("split")} onCancel={() => setSplitting(false)} />
       ) : (
-        <>
-          <Change tender={quote.tender} given={input.given} change={quote.change} onGiven={(given) => edit({ given })} />
-          <div className="grid grid-cols-2 gap-3">
-            <PayTile icon={<MdPayments />} label="Cash" disabled={!discount.ok} onClick={() => settle("cash")} />
-            <PayTile icon={<MdQrCode2 />} label="UPI" disabled={!discount.ok} onClick={() => settle("upi")} />
-          </div>
-          <Button variant="plain" className="w-full" disabled={!discount.ok} onClick={() => setSplitting(true)}>
-            <MdCallSplit aria-hidden className="text-xl" /> Part cash, part UPI
-          </Button>
-        </>
+        remaining > 0 && (
+          <>
+            <section className="space-y-3">
+              <h3 className="px-1 text-[13px] font-semibold text-muted">How did they pay?</h3>
+              <SegmentedControl label="How did they pay?" options={METHODS} value={input.method} onChange={choose} />
+              {input.method && (
+                <div className="space-y-1">
+                  <TextField
+                    label={input.method === "cash" ? "Cash received" : "UPI received"}
+                    prefix="₹"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    value={input.received}
+                    error={receivedError}
+                    onChange={(e) => edit({ received: e.target.value })}
+                  />
+                  {receipt?.ok && receipt.value.change > 0 && (
+                    <p aria-live="polite" className="px-1 text-right text-[20px] font-bold text-success tabular-nums">
+                      Change {formatPrice(receipt.value.change)}
+                    </p>
+                  )}
+                  {receipt?.ok && !settles && (
+                    <p className="px-1 text-[13px] text-muted">
+                      Part payment: {formatPrice((remaining - receipt.value.amount) as Paise)} will still be due.
+                    </p>
+                  )}
+                </div>
+              )}
+            </section>
+            <div className="space-y-2">
+              <Button className="min-h-14 w-full text-[19px]" disabled={!discount.ok || !receipt?.ok} onClick={() => commit("receive")}>
+                {label}
+              </Button>
+              {!input.method && <p className="text-center text-[13px] text-muted">Choose Cash or UPI to settle.</p>}
+            </div>
+          </>
+        )
       )}
     </div>
   );
 }
 
-const AMOUNT_ERRORS = {
+const DISCOUNT_ERRORS: Partial<Record<string, (subtotal: Paise, paid: Paise) => string>> = {
   invalid: () => "Type an amount, like 850.",
-  upward: (subtotal: Paise) => `Can't be more than ${formatPrice(subtotal)}. Add a dish instead.`,
+  upward: (subtotal) => `Can't be more than ${formatPrice(subtotal)}. Add a dish instead.`,
+  belowPaid: (_, paid) => `${formatPrice(paid)} is already paid; it can't go below that.`,
 };
 
-function PayTile({ icon, label, disabled, onClick }: { icon: ReactNode; label: string; disabled: boolean; onClick: () => void }) {
-  return (
-    <Button variant="secondary" className="min-h-20 flex-col gap-1 rounded-2xl" disabled={disabled} onClick={onClick}>
-      <span aria-hidden className="text-[28px] text-primary">
-        {icon}
-      </span>
-      {label}
-    </Button>
-  );
-}
-
-// Optional: tap the note the guest handed over to see the change. Nothing
-// here commits; Cash does.
-function Change({
-  tender,
-  given,
-  change,
-  onGiven,
-}: {
-  tender: Paise[];
-  given?: Paise;
-  change?: Paise;
-  onGiven: (given: Paise | undefined) => void;
-}) {
-  return (
-    <section aria-label="Cash given" className="space-y-2">
-      <div className="flex items-center gap-2">
-        <span className="shrink-0 px-1 text-[13px] font-semibold text-muted">Cash given</span>
-        <div className="flex flex-1 justify-end gap-2">
-          {tender.map((amount) => (
-            <button
-              key={amount}
-              type="button"
-              aria-pressed={given === amount}
-              onClick={() => onGiven(given === amount ? undefined : amount)}
-              className={`min-h-11 rounded-full px-3.5 text-[15px] font-semibold tabular-nums transition-colors ${
-                given === amount ? "bg-ink text-bg" : "bg-surface text-ink"
-              }`}
-            >
-              {formatPrice(amount)}
-            </button>
-          ))}
-        </div>
-      </div>
-      <p aria-live="polite" className="min-h-7 px-1 text-right text-[20px] font-bold text-success tabular-nums">
-        {change !== undefined && (change === 0 ? "No change" : `Change ${formatPrice(change)}`)}
-      </p>
-    </section>
-  );
-}
-
-function Split({
-  screen,
-  input,
-  edit,
-  onSettle,
-  onCancel,
-}: {
-  screen: ReadyOrder;
-  input: BillInput;
-  edit: (patch: Partial<BillInput>) => void;
-  onSettle: () => void;
-  onCancel: () => void;
-}) {
-  const { due, split, discount } = screen.quote(input);
-  const upi = split.ok ? (split.value.find((p) => p.method === "upi")?.amount ?? 0) : undefined;
-  const error =
-    !split.ok && split.error === "invalid"
-      ? "Type an amount, like 500."
-      : !split.ok && split.error === "moreThanDue"
-        ? `Can't be more than ${formatPrice(due)}.`
-        : undefined;
-
-  return (
-    <div className="space-y-4">
-      <div className="space-y-1 rounded-2xl bg-surface px-4 py-3">
-        <TextField
-          label="Cash"
-          prefix="₹"
-          inputMode="decimal"
-          autoComplete="off"
-          autoFocus
-          inset
-          value={input.cash}
-          error={error}
-          onChange={(e) => edit({ cash: e.target.value })}
-        />
-        <div className="flex min-h-11 items-center justify-between px-1 text-[17px]">
-          <span className="text-muted">UPI, the rest</span>
-          <span className="font-semibold tabular-nums">{upi === undefined ? "—" : formatPrice(upi as Paise)}</span>
-        </div>
-      </div>
-      <Button className="w-full" disabled={!split.ok || !discount.ok} onClick={onSettle}>
-        Settle {formatPrice(due)}
-      </Button>
-      <Button variant="plain" className="w-full" onClick={onCancel}>
-        Pay all at once
-      </Button>
-    </div>
-  );
-}
+const RECEIVED_ERRORS: Record<"invalid" | "zero" | "moreThanDue", (remaining: Paise, method: PaymentMethod) => string> = {
+  invalid: () => "Type an amount, like 500.",
+  zero: () => "Type the amount received.",
+  moreThanDue: (remaining) => `UPI is exact: no more than ${formatPrice(remaining)}.`,
+};

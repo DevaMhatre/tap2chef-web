@@ -2,119 +2,74 @@ import { normalizeName } from "./menu";
 import { addPaise, paise, parseRupees, type Paise } from "./money";
 import { err, ok, type Result } from "./result";
 
-// How a bill is paid, free of orders: the arithmetic every settle screen,
-// correction and day's total shares.
+// The money arithmetic of a bill, free of orders: what is due, what is left,
+// what to record and what change to hand back.
 
-export type Payment = { method: "cash"; amount: Paise } | { method: "upi"; amount: Paise; ref?: string };
-export type PaymentMethod = Payment["method"];
+export type PaymentMethod = "cash" | "upi";
+/** How one payment came in. A new method (card) is a new arm. */
+export type Tender = { method: "cash" } | { method: "upi"; ref?: string };
 
 /** Money knocked off the bill, typed as the final amount: "make it ₹850". */
 export type Discount = { amount: Paise; /** "Regular". Empty when there is none. */ reason: string };
 
-export type Bill = {
-  /** What the dishes came to when the bill settled; later menu edits never change it. */
-  subtotal: Paise;
-  discount?: Discount;
-  /** Several, so one bill can be part cash, part UPI. Sum to the amount due, exactly. */
-  payments: Payment[];
-};
-
 export const DISCOUNT_REASON_MAX = 80;
 
 export const amountDue = (subtotal: Paise, discount?: Discount): Paise => paise(subtotal - (discount?.amount ?? 0));
-export const amountPaid = (payments: readonly Payment[]): Paise => addPaise(...payments.map((p) => p.amount));
+export const amountPaid = (payments: readonly { amount: Paise }[]): Paise => addPaise(...payments.map((p) => p.amount));
 
-export type DiscountError = "upward" | "tooLong";
+export type DiscountError = "upward" | "belowPaid" | "tooLong";
 
 /**
  * The owner types what the guest pays; the difference is the discount. Only
- * ever downward: a bill is raised by adding a dish, not by typing a number.
+ * ever downward, and never below what has already been received.
  */
-export function discountTo(subtotal: Paise, finalAmount: Paise, reason = ""): Result<Discount | undefined, DiscountError> {
+export function discountTo(
+  subtotal: Paise,
+  finalAmount: Paise,
+  reason = "",
+  paid: Paise = paise(0),
+): Result<Discount | undefined, DiscountError> {
   if (finalAmount > subtotal) return err("upward");
+  if (finalAmount < paid) return err("belowPaid");
   const why = normalizeName(reason);
   if (why.length > DISCOUNT_REASON_MAX) return err("tooLong");
   return ok(finalAmount === subtotal ? undefined : { amount: paise(subtotal - finalAmount), reason: why });
 }
 
-export type BillError = "discountTooLarge" | "zeroPayment" | "notExact";
-
-/** A bill settles only when its payments sum exactly to what is due. */
-export function validateBill(bill: Bill): Result<Bill, BillError> {
-  const { subtotal, discount, payments } = bill;
-  if (discount && (discount.amount <= 0 || discount.amount > subtotal)) return err("discountTooLarge");
-  // A ₹0 payment says nothing and would show as a third method on the day's numbers.
-  if (payments.some((p) => p.amount <= 0)) return err("zeroPayment");
-  if (amountPaid(payments) !== amountDue(subtotal, discount)) return err("notExact");
-  return ok(bill);
-}
-
-/** One tap: all of it in cash, or all of it by UPI. Nothing to pay is no payment. */
-export function fullPayment(method: PaymentMethod, due: Paise): Payment[] {
-  return due > 0 ? [{ method, amount: due }] : [];
-}
+/** What a payment records, and the change to hand back. */
+export type Receipt = { amount: Paise; change: Paise };
+export type ReceiveError = "zero" | "moreThanDue";
 
 /**
- * Split: the cash typed, UPI the rest. The sum is exact by construction, so
- * a split can never be a paisa off.
+ * Cash may be more than what is left — a ₹1000 note for ₹660 records ₹660
+ * and hands back ₹340. UPI is exact, so more than what is left is a typo.
  */
-export function splitPayment(due: Paise, cash: Paise): Result<Payment[], "moreThanDue"> {
-  if (cash > due) return err("moreThanDue");
-  return ok([...fullPayment("cash", cash), ...fullPayment("upi", paise(due - cash))]);
-}
-
-/** How the guest pays: all cash, all UPI, or cash typed and UPI the rest. */
-export type PayBy = PaymentMethod | "split";
-
-/** The payments a quote makes for `by`; nothing while what was typed doesn't add up. */
-export function paymentsFor(by: PayBy, quote: BillQuote): Payment[] | undefined {
-  if (by !== "split") return fullPayment(by, quote.due);
-  return quote.split.ok ? quote.split.value : undefined;
+export function receiptFor(method: PaymentMethod, given: Paise, remaining: Paise): Result<Receipt, ReceiveError> {
+  if (given <= 0) return err("zero");
+  if (given <= remaining) return ok({ amount: given, change: paise(0) });
+  if (method === "upi" || remaining <= 0) return err("moreThanDue");
+  return ok({ amount: remaining, change: paise(given - remaining) });
 }
 
 /** The day's money by drawer: what the cash box should hold, what came by UPI. */
 export type Takings = { total: Paise; cash: Paise; upi: Paise };
 
-export function takings(bills: readonly Bill[]): Takings {
-  const payments = bills.flatMap((b) => b.payments);
+export function takings(payments: readonly ({ amount: Paise } & Tender)[]): Takings {
   const by = (method: PaymentMethod) => amountPaid(payments.filter((p) => p.method === method));
   return { total: amountPaid(payments), cash: by("cash"), upi: by("upi") };
 }
 
-// ---------------------------------------------------------------- change
-
-const RUPEE = 100;
-const NOTE_STEPS = [50, 100, 500, 1000, 2000].map((r) => r * RUPEE);
-// ₹50 steps help small bills (₹360 → ₹400); on ₹1240 nobody hands over ₹1250.
-const SMALL_BILL = 1000 * RUPEE;
-
-/**
- * What a guest is likely to hand over for `due`: the next round amounts above
- * it, smallest first, at most three. ₹890 → ₹900 · ₹1000 · ₹2000.
- */
-export function tenderOptions(due: Paise): Paise[] {
-  if (due <= 0) return [];
-  const steps = NOTE_STEPS.filter((step) => step > 50 * RUPEE || due < SMALL_BILL);
-  const above = steps.map((step) => (Math.floor(due / step) + 1) * step);
-  return [...new Set(above)].sort((a, b) => a - b).slice(0, 3).map(paise);
-}
-
-/** The change to hand back, or nothing when the guest gave too little. */
-export function changeFor(due: Paise, tendered: Paise): Paise | undefined {
-  return tendered >= due ? paise(tendered - due) : undefined;
-}
-
 // ---------------------------------------------------------------- the bill sheet
 
-/** What staff have typed or tapped on the bill so far, as typed. */
+/** What staff have typed or chosen on the bill so far, as typed. */
 export type BillInput = {
   /** "Guest pays": empty means the full bill. */
   finalAmount: string;
   reason: string;
-  /** The cash part of a split; UPI is the rest. */
-  cash: string;
-  /** A note the guest handed over, tapped from the change chips. */
-  given?: Paise;
+  /** Nothing until staff choose: how the guest paid is a decision, never a default. */
+  method: PaymentMethod | null;
+  /** The amount handed over or sent. */
+  received: string;
 };
 
 export type BillQuote = {
@@ -122,30 +77,39 @@ export type BillQuote = {
   /** The subtotal less a valid discount; the full subtotal while the typed amount is wrong. */
   due: Paise;
   discount: Result<Discount | undefined, "invalid" | DiscountError>;
-  /** The round amounts a guest is likely to hand over for `due`. */
-  tender: Paise[];
-  /** The change for `given`, when it covers `due`. */
-  change?: Paise;
-  /** Cash as typed and UPI the rest; empty cash is not a split yet. */
-  split: Result<Payment[], "empty" | "invalid" | "moreThanDue">;
+  paid: Paise;
+  /** What is still to come. Below zero when more came in than is due. */
+  remaining: number;
+  /** What the next payment would record; null until a method is chosen. */
+  receipt: Result<Receipt, "empty" | "invalid" | ReceiveError> | null;
+  /** True when the next payment closes the bill. */
+  settles: boolean;
 };
 
 /** Everything the bill sheet shows, worked out from what staff typed. */
-export function quoteBill(subtotal: Paise, input: BillInput): BillQuote {
+export function quoteBill(subtotal: Paise, paid: Paise, input: BillInput): BillQuote {
   const final = input.finalAmount.trim() === "" ? subtotal : parseRupees(input.finalAmount);
-  const discount = final === undefined ? err("invalid" as const) : discountTo(subtotal, final, input.reason);
+  const discount = final === undefined ? err("invalid" as const) : discountTo(subtotal, final, input.reason, paid);
   const due = discount.ok ? amountDue(subtotal, discount.value) : subtotal;
+  const remaining = due - paid;
 
-  const cash = parseRupees(input.cash);
-  const split =
-    input.cash.trim() === "" ? err("empty" as const) : cash === undefined ? err("invalid" as const) : splitPayment(due, cash);
+  const given = parseRupees(input.received);
+  const receipt =
+    input.method === null
+      ? null
+      : input.received.trim() === ""
+        ? err("empty" as const)
+        : given === undefined
+          ? err("invalid" as const)
+          : receiptFor(input.method, given, paise(Math.max(0, remaining)));
 
   return {
     subtotal,
     due,
     discount,
-    tender: tenderOptions(due),
-    change: input.given === undefined ? undefined : changeFor(due, input.given),
-    split,
+    paid,
+    remaining,
+    receipt,
+    settles: discount.ok && receipt !== null && receipt.ok && receipt.value.amount === remaining,
   };
 }

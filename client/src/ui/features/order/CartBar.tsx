@@ -4,11 +4,11 @@ import type { ReadyOrder } from "../../../usecases/useOrder";
 import { Button } from "../../design-system/Button";
 import { formatPrice } from "../../format";
 
-type Props = { screen: ReadyOrder; onOpen: () => void; onSend: () => void; onSettle: () => void };
+type Props = { screen: ReadyOrder; onOpen: () => void; onSend: () => void; onBill: () => void };
 
 // Phones and tablets in portrait: the order lives in a bar under the thumb. Send is on the bar itself,
 // so table → dish → Send is three taps.
-export function CartBar({ screen, onOpen, onSend, onSettle }: Props) {
+export function CartBar({ screen, onOpen, onSend, onBill }: Props) {
   const { draft, rounds, total } = screen.ticket;
   if (draft.length === 0 && rounds.length === 0) return null;
   const unsent = dishCount(draft);
@@ -21,21 +21,27 @@ export function CartBar({ screen, onOpen, onSend, onSettle }: Props) {
           <span className="min-w-0">
             <span className="block text-[17px] font-bold tabular-nums">{formatPrice(total)}</span>
             <span className="block truncate text-[13px] text-muted">
-              {unsent > 0 ? `${unsent} not sent` : `${rounds.length} ${rounds.length === 1 ? "round" : "rounds"} sent`} · View order
+              {unsent > 0
+                ? `${unsent} not sent`
+                : screen.next === "settle"
+                  ? screen.bill.paid > 0
+                    ? `${formatPrice(screen.bill.paid)} paid`
+                    : "Bill given"
+                  : `${rounds.length} ${rounds.length === 1 ? "round" : "rounds"} sent`}{" "}
+              · View order
             </span>
           </span>
         </button>
-        {/* One primary at a time: Send while anything waits for the kitchen, then Settle. */}
-        {unsent > 0 ? (
+        {/* One primary at a time: Send while anything waits for the kitchen, then Bill, then Settle. */}
+        {screen.next === "send" && (
           <Button className="min-h-12 px-6" onClick={onSend}>
             Send
           </Button>
-        ) : (
-          screen.canSettle && (
-            <Button className="min-h-12 px-6" onClick={onSettle}>
-              Settle
-            </Button>
-          )
+        )}
+        {(screen.next === "bill" || screen.next === "settle") && (
+          <Button className="min-h-12 px-6" onClick={onBill}>
+            {screen.next === "bill" ? "Bill" : "Settle"}
+          </Button>
         )}
       </div>
     </div>

@@ -1,5 +1,5 @@
 import type { VoidReason } from "../../../domain/order";
-import type { Payment } from "../../../domain/settlement";
+import type { PaymentMethod } from "../../../domain/settlement";
 import type { OrderLabel } from "../../../usecases/useOrders";
 
 // The words staff read. "4" becomes "Table 4"; a named table keeps its name.
@@ -22,9 +22,11 @@ export const VOID_REASONS: { value: VoidReason; label: string }[] = [
 export const voidReasonLabel = (reason: VoidReason): string => VOID_REASONS.find((r) => r.value === reason)!.label;
 
 /** How a bill was paid, in a word or two. */
-export function paidByLabel(payments: readonly Payment[]): string {
+export function paidByLabel(payments: readonly { method: PaymentMethod }[]): string {
   const methods = new Set(payments.map((p) => p.method));
   if (methods.size === 0) return "Nothing to pay";
   if (methods.size > 1) return "Cash + UPI";
   return methods.has("cash") ? "Cash" : "UPI";
 }
+
+export const METHOD_LABEL: Record<PaymentMethod, string> = { cash: "Cash", upi: "UPI" };

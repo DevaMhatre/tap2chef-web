@@ -4,14 +4,14 @@ import { Link, useNavigate, useParams } from "react-router";
 import type { Paise } from "../../domain/money";
 import type { OrderId, OrderLine } from "../../domain/order";
 import type { TableId } from "../../domain/tables";
-import type { Undo } from "../../usecases/orderDesk";
 import { useOrder, type OrderTarget, type ReadyOrder } from "../../usecases/useOrder";
 import { Button } from "../design-system/Button";
-import { haptic } from "../design-system/haptic";
+import { haptic, hapticSuccess } from "../design-system/haptic";
+import { useCompletion } from "../design-system/Completion";
 import { SegmentedControl } from "../design-system/SegmentedControl";
 import { Sheet } from "../design-system/Sheet";
 import { useUndoToast } from "../design-system/UndoToast";
-import { BillSheet } from "../features/order/BillSheet";
+import { BillSheet, type Settled } from "../features/order/BillSheet";
 import { CartBar } from "../features/order/CartBar";
 import { orderTitle, shortOrderTitle } from "../features/order/labels";
 import { formatPrice } from "../format";
@@ -77,6 +77,7 @@ function OrderScreen({ target }: { target: OrderTarget }) {
 function ReadyScreen({ screen, back }: { screen: ReadyOrder; back: { to: string; label: string } }) {
   const navigate = useNavigate();
   const showUndo = useUndoToast();
+  const complete = useCompletion();
   const [sheet, setSheet] = useState<OpenSheet>(null);
   const [failure, setFailure] = useState<string>();
   const close = () => setSheet(null);
@@ -118,13 +119,31 @@ function ReadyScreen({ screen, back }: { screen: ReadyOrder; back: { to: string;
 
   // Paid: back to the floor, where the table is free again. Undo stays on
   // screen there for a few seconds.
-  const settled = (paid: Paise, undo: Undo) => {
-    haptic();
-    close();
+  // Settled: back to the floor, where the table is free, with a moment that
+  // says the job is done — then Undo, for a few seconds.
+  const settled = ({ paid, method, change, undo }: Settled) => {
+    const title = orderTitle(screen.label);
+    hapticSuccess();
+    setSheet(null);
     navigate(back.to);
-    showUndo(`${orderTitle(screen.label)} paid · ${formatPrice(paid)}`, undo);
+    complete(
+      { title: `${title} settled`, detail: `${formatPrice(paid)} · ${method}`, emphasis: change > 0 ? `Hand back ${formatPrice(change)}` : undefined },
+      () => showUndo(`${title} settled · ${formatPrice(paid)}`, undo),
+    );
   };
-  const openBill = () => setSheet({ kind: "bill" });
+  // "Bill, please": the bill is handed over (the table now waits to pay) and
+  // the sheet opens for the money. Later taps just open the sheet.
+  const openBill = () =>
+    attempt(async () => {
+      if (screen.next === "bill") {
+        const presented = await screen.presentBill();
+        if (!presented.ok) return;
+        haptic();
+      }
+      setSheet({ kind: "bill" });
+    });
+  const nextLabel = screen.next === "bill" ? "Bill" : "Settle";
+  const nextAmount = formatPrice(Math.max(0, screen.bill.remaining) as Paise);
 
   const ticket = (
     <Ticket
@@ -197,9 +216,9 @@ function ReadyScreen({ screen, back }: { screen: ReadyOrder; back: { to: string;
               Send to Kitchen
             </Button>
           )}
-          {screen.canSettle && (
+          {(screen.next === "bill" || screen.next === "settle") && (
             <Button className="w-full" onClick={openBill}>
-              Settle {formatPrice(screen.ticket.total)}
+              {nextLabel} {nextAmount}
             </Button>
           )}
         </aside>
@@ -207,18 +226,18 @@ function ReadyScreen({ screen, back }: { screen: ReadyOrder; back: { to: string;
 
       {/* Room for the cart bar, so it never covers the last dish. */}
       <div aria-hidden className="h-20 lg:hidden" />
-      <CartBar screen={screen} onOpen={() => setSheet({ kind: "ticket" })} onSend={send} onSettle={openBill} />
+      <CartBar screen={screen} onOpen={() => setSheet({ kind: "ticket" })} onSend={send} onBill={openBill} />
 
       <Sheet
         open={sheet?.kind === "ticket"}
         onClose={close}
         title={orderTitle(screen.label)}
-        dismissLabel={screen.canSettle ? "Close" : null}
+        dismissLabel={screen.next === "bill" || screen.next === "settle" ? "Close" : null}
         action={
-          screen.canSettle ? (
+          screen.next === "bill" || screen.next === "settle" ? (
             // Hands over to the bill sheet in the same place.
             <Button size="compact" onClick={openBill}>
-              Settle
+              {nextLabel}
             </Button>
           ) : screen.ticket.draft.length > 0 ? (
             <Button

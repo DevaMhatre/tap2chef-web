@@ -2,7 +2,7 @@
 // implements them; use cases never import Dexie or browser APIs directly.
 
 import type { Category, ItemOverride, MenuItem, MenuProfile } from "../domain/menu";
-import type { BusinessDate, Order, OrderLine, OutOfStock } from "../domain/order";
+import type { BusinessDate, Order, OrderLine, OutOfStock, Payment } from "../domain/order";
 import type { DiningTable } from "../domain/tables";
 
 export interface SyncRepository {
@@ -46,6 +46,8 @@ export type OrderSnapshot = {
   /** Open orders, whichever day they began, so one left open is never lost. */
   orders: Order[];
   lines: OrderLine[];
+  /** Money received against the orders above. */
+  payments: Payment[];
   outOfStock: OutOfStock[];
 };
 
@@ -53,6 +55,7 @@ export type OrderRecord =
   | { table: "tables"; record: DiningTable }
   | { table: "orders"; record: Order }
   | { table: "lines"; record: OrderLine }
+  | { table: "payments"; record: Payment }
   | { table: "outOfStock"; record: OutOfStock };
 
 export type OrderChange = OrderRecord & { op: "put" | "remove" };

@@ -1,60 +1,44 @@
 import { useRef, useState } from "react";
-import { toRupeeText, type Paise } from "../../../domain/money";
-import { isLive, lineTotal, ticketOf } from "../../../domain/order";
-import type { PayBy } from "../../../domain/settlement";
+import { isLive, lineTotal, ticketOf, type PaymentId } from "../../../domain/order";
+import type { PaymentMethod } from "../../../domain/settlement";
 import type { ReadyOrders, SettledSummary } from "../../../usecases/useOrders";
 import { Button } from "../../design-system/Button";
-import { TextField } from "../../design-system/Field";
 import { ListSection } from "../../design-system/GroupedList";
 import { haptic } from "../../design-system/haptic";
 import { SegmentedControl } from "../../design-system/SegmentedControl";
 import { Sheet } from "../../design-system/Sheet";
 import { formatPrice, formatTime } from "../../format";
-import { orderTitle } from "./labels";
+import { METHOD_LABEL, orderTitle } from "./labels";
 
 type Props = { bill: SettledSummary | null; orders: ReadyOrders; onClose: () => void };
 
+const METHODS: { value: PaymentMethod; label: string }[] = [
+  { value: "cash", label: METHOD_LABEL.cash },
+  { value: "upi", label: METHOD_LABEL.upi },
+];
+
 // A paid bill: what the table had and how it paid. It never reopens; only
-// the method can be put right, and the bill then says it was corrected.
+// how each payment came in can be put right, and it then says so.
 export function SettledSheet({ bill, orders, onClose }: Props) {
   return bill ? <Opened key={bill.order.id} bill={bill} orders={orders} onClose={onClose} /> : null;
 }
 
-const PAY_BY: { value: PayBy; label: string }[] = [
-  { value: "cash", label: "Cash" },
-  { value: "upi", label: "UPI" },
-  { value: "split", label: "Split" },
-];
-
 function Opened({ bill, orders, onClose }: { bill: SettledSummary; orders: ReadyOrders; onClose: () => void }) {
   const { state } = bill.order;
-  const { payments, discount, subtotal } = state.bill;
-  const initialBy: PayBy = payments.length === 1 ? payments[0]!.method : "split";
-  const initialCash = initialBy === "split" ? toRupeeText((payments.find((p) => p.method === "cash")?.amount ?? 0) as Paise) : "";
-
-  // Visual-only state: the method being chosen, as typed.
-  const [by, setBy] = useState<PayBy>(initialBy);
-  const [cash, setCash] = useState(initialCash);
+  const { payments, discount, subtotal, paid } = bill.bill;
+  // Visual-only state: the methods being chosen, until Save.
+  const [methods, setMethods] = useState<Record<PaymentId, PaymentMethod>>(() =>
+    Object.fromEntries(payments.map((p) => [p.id, p.method])),
+  );
   const [failure, setFailure] = useState<string>();
   const saving = useRef(false);
-
-  const split = orders.quoteSplit(bill.paid, cash);
-  const changed = by !== initialBy || (by === "split" && cash !== initialCash);
-  const valid = by !== "split" || split.ok;
-  const upi = split.ok ? (split.value.find((p) => p.method === "upi")?.amount ?? 0) : undefined;
-  const cashError =
-    !split.ok && split.error === "invalid"
-      ? "Type an amount, like 500."
-      : !split.ok && split.error === "moreThanDue"
-        ? `Can't be more than ${formatPrice(bill.paid)}.`
-        : undefined;
+  const changed = payments.filter((p) => methods[p.id] !== p.method);
 
   async function save() {
     if (saving.current) return;
     saving.current = true;
     try {
-      const result = await orders.correct(bill.order.id, by, cash);
-      if (!result.ok) return;
+      for (const p of changed) await orders.correctPayment(p.id, methods[p.id]!);
       haptic();
       onClose();
     } catch {
@@ -72,10 +56,10 @@ function Opened({ bill, orders, onClose }: { bill: SettledSummary; orders: Ready
       open
       onClose={onClose}
       title={orderTitle(bill.label)}
-      dismissLabel={changed ? "Cancel" : null}
+      dismissLabel={changed.length > 0 ? "Cancel" : null}
       action={
-        changed ? (
-          <Button size="compact" disabled={!valid} onClick={save}>
+        changed.length > 0 ? (
+          <Button size="compact" onClick={save}>
             Save
           </Button>
         ) : (
@@ -87,9 +71,9 @@ function Opened({ bill, orders, onClose }: { bill: SettledSummary; orders: Ready
     >
       <div className="space-y-6">
         <section className="pt-1 text-center">
-          <p className="text-[40px] leading-none font-bold tracking-tight tabular-nums">{formatPrice(bill.paid)}</p>
+          <p className="text-[40px] leading-none font-bold tracking-tight tabular-nums">{formatPrice(paid)}</p>
           <p className="mt-2 text-[15px] text-muted">
-            Paid {formatTime(state.settledAt)}
+            Settled {formatTime(state.settledAt)}
             {discount && (
               <>
                 {" · "}
@@ -98,36 +82,31 @@ function Opened({ bill, orders, onClose }: { bill: SettledSummary; orders: Ready
               </>
             )}
           </p>
-          {state.correctedAt && (
-            <p className="mt-1 text-[13px] font-semibold text-warning">Payment corrected at {formatTime(state.correctedAt)}</p>
-          )}
         </section>
 
         {failure && <p className="rounded-xl bg-primary/12 px-4 py-3 text-[15px] font-medium text-primary">{failure}</p>}
 
-        {bill.paid > 0 && (
-          <section className="space-y-3">
-            <h3 className="px-1 text-[13px] font-semibold text-muted">Paid by</h3>
-            <SegmentedControl label="Paid by" options={PAY_BY} value={by} onChange={setBy} />
-            {by === "split" && (
-              <div className="space-y-1 rounded-2xl bg-surface px-4 py-3">
-                <TextField
-                  label="Cash"
-                  prefix="₹"
-                  inputMode="decimal"
-                  autoComplete="off"
-                  inset
-                  value={cash}
-                  error={cashError}
-                  onChange={(e) => setCash(e.target.value)}
-                />
-                <div className="flex min-h-11 items-center justify-between px-1 text-[17px]">
-                  <span className="text-muted">UPI, the rest</span>
-                  <span className="font-semibold tabular-nums">{upi === undefined ? "—" : formatPrice(upi as Paise)}</span>
+        {payments.length > 0 && (
+          <ListSection header="Paid by" footer="Got the method wrong? Change it here; the amount stays.">
+            {payments.map((p) => (
+              <div key={p.id} className="flex items-center gap-3 px-4 py-2">
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[17px] tabular-nums">{formatPrice(p.amount)}</span>
+                  <span className={`block text-[13px] ${p.correctedAt ? "font-semibold text-warning" : "text-muted"}`}>
+                    {p.correctedAt ? `Corrected ${formatTime(p.correctedAt)}` : formatTime(p.receivedAt)}
+                  </span>
+                </span>
+                <div className="w-40 shrink-0">
+                  <SegmentedControl
+                    label={`${formatPrice(p.amount)} paid by`}
+                    options={METHODS}
+                    value={methods[p.id] ?? p.method}
+                    onChange={(method) => setMethods((current) => ({ ...current, [p.id]: method }))}
+                  />
                 </div>
               </div>
-            )}
-          </section>
+            ))}
+          </ListSection>
         )}
 
         <ListSection header="Dishes">

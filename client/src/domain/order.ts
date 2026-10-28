@@ -2,13 +2,14 @@ import { normalizeName, unitPrice, type Diet, type Id, type ItemId, type MenuPro
 import { addPaise, multiplyPaise, type Paise } from "./money";
 import { sortByOrder } from "./ordering";
 import { err, ok, type Result } from "./result";
-import { amountPaid, validateBill, type Bill, type BillError, type Discount, type Payment } from "./settlement";
+import { amountDue, amountPaid, type Discount, type Tender } from "./settlement";
 import type { DiningTable, TableId } from "./tables";
 
 export type OrderId = Id<"OrderId">;
 export type LineId = Id<"LineId">;
 /** One tap of Send: the lines that went to the kitchen together. */
 export type RoundId = Id<"RoundId">;
+export type PaymentId = Id<"PaymentId">;
 
 // ---------------------------------------------------------------- business date
 
@@ -39,9 +40,25 @@ export type ChannelType = OrderChannel["type"];
 
 export type OrderState =
   | { status: "open" }
-  // Final: a settled bill never reopens. Only how it was paid can be
-  // corrected, and a correction stays visible.
-  | { status: "settled"; settledAt: number; bill: Bill; correctedAt?: number };
+  // The guest asked for the bill and has it; the money is on its way, maybe
+  // in parts. One more dish takes the table back to open.
+  | { status: "billed"; billedAt: number; discount?: Discount }
+  // Final: a settled bill never reopens. `subtotal` is what the dishes came
+  // to when it closed, so the day's numbers never re-add lines.
+  | { status: "settled"; billedAt: number; settledAt: number; subtotal: Paise; discount?: Discount };
+
+/**
+ * Money received against an order: a record of its own, like a line, so two
+ * devices taking parts of one bill both count instead of overwriting each other.
+ */
+export type Payment = {
+  id: PaymentId;
+  orderId: OrderId;
+  amount: Paise;
+  receivedAt: number;
+  /** When its method was put right ("it was UPI, not cash"); it stays visible. */
+  correctedAt?: number;
+} & Tender;
 
 export type Order = {
   id: OrderId;
@@ -174,45 +191,124 @@ export function voidSent(
   ]);
 }
 
-// ---------------------------------------------------------------- settling
+// ---------------------------------------------------------------- the bill
 
-export type SettleError = "settled" | "unsent" | "empty" | BillError;
+export type BillView = {
+  subtotal: Paise;
+  discount?: Discount;
+  due: Paise;
+  paid: Paise;
+  /** What is still to come; below zero when more came in than is due. */
+  remaining: number;
+  payments: Payment[];
+};
+
+/** What the order owes and has paid. A settled bill reads its snapshot, never the lines. */
+export function billOf(order: Order, lines: readonly OrderLine[], payments: readonly Payment[]): BillView {
+  const own = payments.filter((p) => p.orderId === order.id).sort((a, b) => a.receivedAt - b.receivedAt || (a.id < b.id ? -1 : 1));
+  const { state } = order;
+  const subtotal = state.status === "settled" ? state.subtotal : orderTotal(lines.filter((l) => l.orderId === order.id));
+  const discount = state.status === "open" ? undefined : state.discount;
+  const due = amountDue(subtotal, discount);
+  const paid = amountPaid(own);
+  return { subtotal, ...(discount && { discount }), due, paid, remaining: due - paid, payments: own };
+}
+
+export type BillError = "settled" | "unsent" | "empty";
 
 /**
- * Closes the bill and frees the table. Everything must have gone to the
- * kitchen first: a dish still in the cart is either forgotten or not wanted,
- * and only the staff can say which.
+ * "Bill, please." Everything must have gone to the kitchen first: a dish
+ * still in the cart is either forgotten or not wanted, and only staff know which.
  */
-export function settle(
-  order: Order,
-  lines: readonly OrderLine[],
-  payments: Payment[],
-  discount: Discount | undefined,
-  at: number,
-): Result<Order, SettleError> {
-  if (order.state.status !== "open") return err("settled");
+export function presentBill(order: Order, lines: readonly OrderLine[], at: number): Result<Order, BillError> {
+  if (order.state.status === "settled") return err("settled");
+  if (order.state.status === "billed") return ok(order);
   const own = lines.filter((l) => l.orderId === order.id);
   if (own.some((l) => l.state.status === "draft")) return err("unsent");
   if (!own.some(isLive)) return err("empty");
-
-  const bill = validateBill({ subtotal: orderTotal(own), ...(discount && { discount }), payments });
-  if (!bill.ok) return bill;
-  return ok({ ...order, state: { status: "settled", settledAt: at, bill: bill.value } });
+  return ok({ ...order, state: { status: "billed", billedAt: at } });
 }
 
-export type CorrectionError = "notSettled" | "amountChanged" | BillError;
+/** One more dish after the bill: the bill no longer stands, and its discount goes with it. */
+export function reopenForDishes(order: Order): Order {
+  return order.state.status === "billed" ? { ...order, state: { status: "open" } } : order;
+}
+
+export type PaymentError = "notBilled" | "unsent" | "discount" | "overpaid" | "zero" | "moreThanDue";
+
+// The billed order with the discount on the sheet, checked against its dishes.
+function billedWith(
+  order: Order,
+  lines: readonly OrderLine[],
+  discount: Discount | undefined,
+): Result<Order, "notBilled" | "unsent" | "discount"> {
+  if (order.state.status !== "billed") return err("notBilled");
+  const own = lines.filter((l) => l.orderId === order.id);
+  if (own.some((l) => l.state.status === "draft")) return err("unsent");
+  if (discount && (discount.amount <= 0 || discount.amount > orderTotal(own))) return err("discount");
+  return ok({ ...order, state: { status: "billed", billedAt: order.state.billedAt, ...(discount && { discount }) } });
+}
 
 /**
- * "It was UPI, not cash." The method can change; the amount can't, so a
+ * Records money received. The payment that brings what is left to exactly
+ * zero closes the bill: settling is never a separate step to forget.
+ */
+export function receivePayment(
+  order: Order,
+  lines: readonly OrderLine[],
+  payments: readonly Payment[],
+  discount: Discount | undefined,
+  tender: Tender,
+  amount: Paise,
+  newId: PaymentId,
+  at: number,
+): Result<{ order: Order; payment: Payment }, PaymentError> {
+  const withDiscount = billedWith(order, lines, discount);
+  if (!withDiscount.ok) return withDiscount;
+  const billed = withDiscount.value;
+  const bill = billOf(billed, lines, payments);
+  // More came in than is due (two devices took the same bill): someone has
+  // to look before anything else is recorded.
+  if (bill.remaining < 0) return err("overpaid");
+  if (amount <= 0) return err("zero");
+  if (amount > bill.remaining) return err("moreThanDue");
+
+  const payment: Payment = { id: newId, orderId: order.id, amount, receivedAt: at, ...tender };
+  return ok({ payment, order: amount === bill.remaining ? settled(billed, bill, at) : billed });
+}
+
+/** A bill with nothing left to pay — ₹0 dishes, or on the house — closes without a payment. */
+export function closeBill(
+  order: Order,
+  lines: readonly OrderLine[],
+  payments: readonly Payment[],
+  discount: Discount | undefined,
+  at: number,
+): Result<Order, "notBilled" | "unsent" | "discount" | "unpaid"> {
+  const withDiscount = billedWith(order, lines, discount);
+  if (!withDiscount.ok) return withDiscount;
+  const billed = withDiscount.value;
+  const bill = billOf(billed, lines, payments);
+  if (bill.remaining !== 0) return err("unpaid");
+  return ok(settled(billed, bill, at));
+}
+
+function settled(order: Order, bill: BillView, at: number): Order {
+  const billedAt = order.state.status === "billed" ? order.state.billedAt : at;
+  return {
+    ...order,
+    state: { status: "settled", billedAt, settledAt: at, subtotal: bill.subtotal, ...(bill.discount && { discount: bill.discount }) },
+  };
+}
+
+/**
+ * "It was UPI, not cash." The method changes; the amount can't, so a
  * correction never moves the day's total, only which drawer it is in.
  */
-export function correctPayments(order: Order, payments: Payment[], at: number): Result<Order, CorrectionError> {
-  if (order.state.status !== "settled") return err("notSettled");
-  const { bill } = order.state;
-  if (amountPaid(payments) !== amountPaid(bill.payments)) return err("amountChanged");
-  const corrected = validateBill({ ...bill, payments });
-  if (!corrected.ok) return corrected;
-  return ok({ ...order, state: { ...order.state, bill: corrected.value, correctedAt: at } });
+export function correctPayment(payment: Payment, method: Tender["method"], at: number): Result<Payment, "unchanged"> {
+  if (payment.method === method) return err("unchanged");
+  const { id, orderId, amount, receivedAt } = payment;
+  return ok({ id, orderId, amount, receivedAt, method, correctedAt: at });
 }
 
 export type SettledOrder = Order & { state: Extract<OrderState, { status: "settled" }> };
@@ -263,18 +359,26 @@ export function ticketOf(lines: readonly OrderLine[]): Ticket {
 
 // ---------------------------------------------------------------- open orders
 
-/** An order with something on it. One whose every line was cancelled frees its table. */
-export type ActiveOrder = { order: Order; lines: OrderLine[]; ticket: Ticket };
+/**
+ * An unsettled order with something on it. One whose every line was
+ * cancelled frees its table — unless money was already taken for it.
+ */
+export type ActiveOrder = { order: Order; lines: OrderLine[]; ticket: Ticket; bill: BillView };
 
-export function activeOrders(orders: readonly Order[], lines: readonly OrderLine[]): ActiveOrder[] {
+export function activeOrders(
+  orders: readonly Order[],
+  lines: readonly OrderLine[],
+  payments: readonly Payment[] = [],
+): ActiveOrder[] {
   const linesOf = new Map<OrderId, OrderLine[]>();
   for (const line of lines) linesOf.set(line.orderId, [...(linesOf.get(line.orderId) ?? []), line]);
 
   return orders
-    .filter((o) => o.state.status === "open")
+    .filter((o) => o.state.status !== "settled")
     .flatMap((order) => {
       const own = linesOf.get(order.id) ?? [];
-      return own.some(isLive) ? [{ order, lines: own, ticket: ticketOf(own) }] : [];
+      const bill = billOf(order, own, payments);
+      return own.some(isLive) || bill.paid > 0 ? [{ order, lines: own, ticket: ticketOf(own), bill }] : [];
     })
     .sort((a, b) => a.order.openedAt - b.order.openedAt || (a.order.id < b.order.id ? -1 : 1));
 }

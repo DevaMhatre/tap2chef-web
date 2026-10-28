@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { Category, CategoryId, ItemId, MenuItem, MenuProfile, ProfileId } from "../domain/menu";
 import { paise } from "../domain/money";
 import type { OrderId } from "../domain/order";
+import type { BillInput } from "../domain/settlement";
 import type { TableId } from "../domain/tables";
 import { fakeClock, fakeIds, fakeMenuRepository, fakeOrderRepository } from "./fakes";
 import type { MenuSnapshot, Ports } from "./ports";
@@ -104,28 +105,49 @@ describe("useOrder", () => {
     await waitFor(() => expect(gone.result.current.state).toBe("missing"));
   });
 
-  it("settles only once everything is sent, with a discount, and frees the table", async () => {
+  const input = (patch: Partial<BillInput> = {}): BillInput => ({ finalAmount: "", reason: "", method: null, received: "", ...patch });
+
+  it("leads from Send to Bill to Settle, takes money in parts, and frees the table", async () => {
     const { result } = renderOrder({ kind: "table", tableId: t1 });
     await waitFor(() => expect(result.current.state).toBe("ready"));
+    expect(ready(result.current).next).toBeNull();
     await act(async () => {
-      await ready(result.current).addDish(ready(result.current).dishes[0]!);
+      await ready(result.current).addDish(ready(result.current).dishes[0]!); // Dal ₹220
     });
-    expect(ready(result.current).canSettle).toBe(false);
+    expect(ready(result.current).next).toBe("send");
     await act(async () => {
       await ready(result.current).send();
     });
-    expect(ready(result.current).canSettle).toBe(true);
+    expect(ready(result.current).next).toBe("bill");
+    await act(async () => {
+      await ready(result.current).presentBill();
+    });
+    expect(ready(result.current).next).toBe("settle");
 
-    const input = { finalAmount: "200", reason: "Regular", cash: "" };
-    expect(ready(result.current).quote(input)).toMatchObject({ subtotal: 22000, due: 20000 });
-    expect(await ready(result.current).settle({ ...input, finalAmount: "2oo" }, "cash")).toEqual({ ok: false, error: "invalid" });
-    expect(await ready(result.current).settle({ ...input, cash: "" }, "split")).toEqual({ ok: false, error: "invalid" });
+    // Nothing is recorded until a method is chosen and the amount makes sense.
+    expect(await ready(result.current).receive(input({ received: "220" }))).toEqual({ ok: false, error: "invalid" });
+    expect(await ready(result.current).receive(input({ method: "upi", received: "300" }))).toEqual({ ok: false, error: "invalid" });
 
     await act(async () => {
-      expect((await ready(result.current).settle({ ...input, cash: "50" }, "split")).ok).toBe(true);
+      expect(await ready(result.current).receive(input({ method: "upi", received: "100" }))).toMatchObject({ ok: true, value: { settled: false } });
+    });
+    expect(ready(result.current).bill).toMatchObject({ paid: 10000, remaining: 12000 });
+    expect(ready(result.current).billInput).toEqual(input());
+
+    // A discount agreed with a part payment stays agreed when the sheet opens again.
+    await act(async () => {
+      await ready(result.current).receive(input({ method: "upi", received: "20", finalAmount: "200", reason: "Regular" }));
+    });
+    expect(ready(result.current).billInput).toEqual(input({ finalAmount: "200", reason: "Regular" }));
+    expect(ready(result.current).bill).toMatchObject({ due: 20000, paid: 12000, remaining: 8000 });
+
+    await act(async () => {
+      const last = await ready(result.current).receive({ ...ready(result.current).billInput, method: "cash", received: "500" });
+      expect(last).toMatchObject({ ok: true, value: { settled: true, change: 42000 } });
     });
     // The table is free: a fresh, empty order.
     expect(ready(result.current).ticket.rounds).toEqual([]);
+    expect(ready(result.current).next).toBeNull();
   });
 
   it("shows a paid takeaway as paid", async () => {
@@ -136,7 +158,10 @@ describe("useOrder", () => {
       await ready(result.current).send();
     });
     await act(async () => {
-      await ready(result.current).settle({ finalAmount: "", reason: "", cash: "" }, "upi");
+      await ready(result.current).presentBill();
+    });
+    await act(async () => {
+      await ready(result.current).receive(input({ method: "upi", received: "200" }));
     });
     expect(result.current).toEqual({ state: "settled", label: { kind: "token", token: 1 }, paid: 20000 });
   });

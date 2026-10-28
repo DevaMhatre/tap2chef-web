@@ -4,7 +4,7 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { ItemId, ProfileId } from "../domain/menu";
 import { paise } from "../domain/money";
-import type { BusinessDate, LineId, Order, OrderId, OrderLine, RoundId } from "../domain/order";
+import type { BusinessDate, LineId, Order, OrderId, OrderLine, Payment, PaymentId, RoundId } from "../domain/order";
 import type { TableId } from "../domain/tables";
 import { fakeClock, fakeIds, fakeOrderRepository } from "./fakes";
 import type { Ports } from "./ports";
@@ -13,16 +13,21 @@ import { useOrders } from "./useOrders";
 
 const TODAY = "2026-10-29" as BusinessDate;
 const t1 = "t1" as TableId;
-const cash = (amount: number) => ({ method: "cash" as const, amount: paise(amount) });
-const upi = (amount: number) => ({ method: "upi" as const, amount: paise(amount) });
+const pay = (id: string, orderId: string, method: "cash" | "upi", amount: number): Payment => ({
+  id: id as PaymentId,
+  orderId: orderId as OrderId,
+  amount: paise(amount),
+  receivedAt: 5,
+  method,
+});
 
-const paid = (id: string, settledAt: number, payments: ReturnType<typeof cash | typeof upi>[], day = TODAY): Order => ({
+const paid = (id: string, settledAt: number, day = TODAY): Order => ({
   id: id as OrderId,
   channel: { type: "dineIn", tableId: t1 },
   profileId: "dine" as ProfileId,
   businessDate: day,
   openedAt: 1,
-  state: { status: "settled", settledAt, bill: { subtotal: paise(payments.reduce((n, p) => n + p.amount, 0)), payments } },
+  state: { status: "settled", billedAt: settledAt, settledAt, subtotal: paise(22000) },
 });
 const line = (orderId: string): OrderLine => ({
   id: `${orderId}-l` as LineId,
@@ -40,8 +45,9 @@ const line = (orderId: string): OrderLine => ({
 function renderOrders() {
   const orders = fakeOrderRepository({
     tables: [{ id: t1, name: "1", sortKey: "1" }],
-    orders: [paid("a", 10, [cash(22000)]), paid("b", 20, [cash(5000), upi(17000)]), paid("old", 30, [upi(9900)], "2026-10-28" as BusinessDate)],
+    orders: [paid("a", 10), paid("b", 20), paid("old", 30, "2026-10-28" as BusinessDate)],
     lines: [line("a"), line("b")],
+    payments: [pay("pa", "a", "cash", 22000), pay("pb1", "b", "cash", 5000), pay("pb2", "b", "upi", 17000), pay("po", "old", "upi", 22000)],
   });
   const ports = {
     orders: orders.repository,
@@ -62,7 +68,7 @@ describe("useOrders", () => {
     const { result } = renderOrders();
     await waitFor(() => expect(result.current.state).toBe("ready"));
     const orders = ready(result.current);
-    expect(orders.settled.map((s) => [s.order.id, s.paid, s.lines.length])).toEqual([
+    expect(orders.settled.map((s) => [s.order.id, s.bill.paid, s.lines.length])).toEqual([
       ["b", 22000, 1],
       ["a", 22000, 1],
     ]);
@@ -70,17 +76,14 @@ describe("useOrders", () => {
     expect(orders.today).toEqual([]);
   });
 
-  it("corrects how a bill was paid, and moves the drawers, not the total", async () => {
+  it("corrects how a payment came in, and moves the drawers, not the total", async () => {
     const { result } = renderOrders();
     await waitFor(() => expect(result.current.state).toBe("ready"));
-    expect(await ready(result.current).correct("a" as OrderId, "split", "")).toEqual({ ok: false, error: "invalid" });
-    expect(ready(result.current).quoteSplit(paise(22000), "20")).toEqual({ ok: true, value: [cash(2000), upi(20000)] });
-
     await act(async () => {
-      expect(await ready(result.current).correct("a" as OrderId, "upi", "")).toEqual({ ok: true, value: undefined });
+      expect(await ready(result.current).correctPayment("pa" as PaymentId, "upi")).toEqual({ ok: true, value: undefined });
     });
     const orders = ready(result.current);
     expect(orders.takings).toEqual({ total: 44000, cash: 5000, upi: 39000 });
-    expect(orders.settled.find((s) => s.order.id === "a")!.order.state.correctedAt).toBeDefined();
+    expect(orders.settled.find((s) => s.order.id === "a")!.bill.payments[0]!.correctedAt).toBeDefined();
   });
 });

@@ -1,16 +1,17 @@
 import {
   activeOrders,
+  billOf,
   businessDate,
   settledOn,
   type ActiveOrder,
-  type CorrectionError,
+  type BillView,
   type OrderId,
   type OrderLine,
+  type PaymentId,
   type SettledOrder,
 } from "../domain/order";
-import type { Paise } from "../domain/money";
-import { err, type Result } from "../domain/result";
-import { amountPaid, paymentsFor, quoteBill, takings, type BillQuote, type PayBy, type Takings } from "../domain/settlement";
+import type { Result } from "../domain/result";
+import { takings, type PaymentMethod, type Takings } from "../domain/settlement";
 import type { DiningTable } from "../domain/tables";
 import { usePorts } from "./PortsProvider";
 import { useOrderDesk } from "./useOrderDesk";
@@ -27,7 +28,7 @@ export function labelOf(active: Pick<ActiveOrder, "order">, tables: readonly Din
 
 export type OrderSummary = ActiveOrder & { label: OrderLabel };
 
-export type SettledSummary = { order: SettledOrder; lines: OrderLine[]; label: OrderLabel; paid: Paise };
+export type SettledSummary = { order: SettledOrder; lines: OrderLine[]; label: OrderLabel; bill: BillView };
 
 export type Orders =
   | { state: "loading" }
@@ -39,12 +40,10 @@ export type Orders =
       /** Today's paid bills, latest first, and what they brought in by drawer. */
       settled: SettledSummary[];
       takings: Takings;
-      /** A paid bill's split as typed: UPI is whatever the cash leaves. */
-      quoteSplit(paid: Paise, cash: string): BillQuote["split"];
-      /** "It was UPI, not cash." Same amount, other method; the bill shows it was corrected. */
-      correct(orderId: OrderId, by: PayBy, cash: string): Promise<Result<void, CorrectionError | "invalid">>;
       /** An id for a new takeaway. Nothing is stored until its first dish. */
       newTakeaway(): OrderId;
+      /** "It was UPI, not cash." Same amount, other method; the bill shows it was corrected. */
+      correctPayment(paymentId: PaymentId, method: PaymentMethod): Promise<Result<void, "unchanged" | "missing">>;
     };
 
 export type ReadyOrders = Extract<Orders, { state: "ready" }>;
@@ -55,27 +54,21 @@ export function useOrders(): Orders {
   if (!snapshot) return { state: "loading" };
 
   const today = businessDate(clock.now());
-  const settled = settledOn(snapshot.orders, today).map((order) => ({
-    order,
-    lines: snapshot.lines.filter((l) => l.orderId === order.id),
-    label: labelOf({ order }, snapshot.tables),
-    paid: amountPaid(order.state.bill.payments),
+  const settled = settledOn(snapshot.orders, today).map((order) => {
+    const lines = snapshot.lines.filter((l) => l.orderId === order.id);
+    return { order, lines, label: labelOf({ order }, snapshot.tables), bill: billOf(order, lines, snapshot.payments) };
+  });
+  const all = activeOrders(snapshot.orders, snapshot.lines, snapshot.payments).map((a) => ({
+    ...a,
+    label: labelOf(a, snapshot.tables),
   }));
-  const all = activeOrders(snapshot.orders, snapshot.lines).map((a) => ({ ...a, label: labelOf(a, snapshot.tables) }));
   return {
     state: "ready",
     earlier: all.filter((a) => a.order.businessDate < today),
     today: all.filter((a) => a.order.businessDate >= today),
-    newTakeaway: () => ids.newId() as OrderId,
     settled,
-    takings: takings(settled.map((s) => s.order.state.bill)),
-    quoteSplit: (paid, cash) => quoteBill(paid, { finalAmount: "", reason: "", cash }).split,
-    correct(orderId, by, cash) {
-      const bill = settled.find((s) => s.order.id === orderId);
-      if (!bill) return Promise.resolve(err("notSettled"));
-      const payments = paymentsFor(by, quoteBill(bill.paid, { finalAmount: "", reason: "", cash }));
-      if (!payments) return Promise.resolve(err("invalid"));
-      return commands.correctPayments(orderId, payments);
-    },
+    takings: takings(settled.flatMap((s) => s.bill.payments)),
+    newTakeaway: () => ids.newId() as OrderId,
+    correctPayment: commands.correctPayment,
   };
 }

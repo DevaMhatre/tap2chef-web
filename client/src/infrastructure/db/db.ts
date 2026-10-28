@@ -34,6 +34,7 @@ export const SYNCED_TABLES = [
   "expenses",
   "diningTables",
   "outOfStock",
+  "payments",
 ] as const;
 
 export type SyncedTable = (typeof SYNCED_TABLES)[number];
@@ -72,4 +73,10 @@ db.version(3).stores({
   orders: "id, tenantId, status, businessDate, updatedAt",
   diningTables: "id, tenantId, updatedAt",
   outOfStock: "id, tenantId, businessDate, updatedAt",
+});
+
+// Step 6: money received is its own record per payment, read by order, so
+// two devices taking parts of one bill both count.
+db.version(4).stores({
+  payments: "id, tenantId, orderId, updatedAt",
 });

@@ -60,7 +60,7 @@ export function fakeClock(start: number) {
 }
 
 export function fakeOrderRepository(initial: Partial<OrderSnapshot> = {}) {
-  let snapshot: OrderSnapshot = { tables: [], orders: [], lines: [], outOfStock: [], ...initial };
+  let snapshot: OrderSnapshot = { tables: [], orders: [], lines: [], payments: [], outOfStock: [], ...initial };
   const listeners = new Set<(snapshot: OrderSnapshot) => void>();
   const writes: OrderChange[][] = [];
   let gate: Promise<void> | null = null;

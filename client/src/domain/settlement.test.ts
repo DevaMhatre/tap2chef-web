@@ -1,21 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { paise } from "./money";
-import {
-  amountDue,
-  changeFor,
-  discountTo,
-  fullPayment,
-  quoteBill,
-  splitPayment,
-  takings,
-  tenderOptions,
-  validateBill,
-  type Payment,
-} from "./settlement";
+import { amountDue, discountTo, quoteBill, receiptFor, takings, type BillInput } from "./settlement";
 
 const rupees = (r: number) => paise(r * 100);
-const cash = (r: number): Payment => ({ method: "cash", amount: rupees(r) });
-const upi = (r: number): Payment => ({ method: "upi", amount: rupees(r) });
 
 describe("discountTo", () => {
   it("turns the final amount into a discount", () => {
@@ -26,13 +13,15 @@ describe("discountTo", () => {
     expect(amountDue(rupees(890), { amount: rupees(40), reason: "" })).toBe(rupees(850));
   });
 
-  it("is no discount when the amount is unchanged", () => {
+  it("is no discount when the amount is unchanged, and allows on the house", () => {
     expect(discountTo(rupees(890), rupees(890))).toEqual({ ok: true, value: undefined });
+    expect(discountTo(rupees(890), rupees(0))).toMatchObject({ ok: true, value: { amount: rupees(890) } });
   });
 
-  it("allows on the house, never upward", () => {
-    expect(discountTo(rupees(890), rupees(0))).toMatchObject({ ok: true, value: { amount: rupees(890) } });
+  it("never goes upward, nor below what was already received", () => {
     expect(discountTo(rupees(890), rupees(900))).toEqual({ ok: false, error: "upward" });
+    expect(discountTo(rupees(890), rupees(250), "", rupees(300))).toEqual({ ok: false, error: "belowPaid" });
+    expect(discountTo(rupees(890), rupees(300), "", rupees(300)).ok).toBe(true);
   });
 
   it("keeps the reason short", () => {
@@ -40,124 +29,78 @@ describe("discountTo", () => {
   });
 });
 
-describe("validateBill", () => {
-  const subtotal = rupees(890);
-
-  it("settles only when payments sum exactly to what is due", () => {
-    expect(validateBill({ subtotal, payments: [cash(500), upi(390)] }).ok).toBe(true);
-    expect(validateBill({ subtotal, payments: [cash(500), upi(389)] })).toEqual({ ok: false, error: "notExact" });
-    expect(validateBill({ subtotal, payments: [cash(900)] })).toEqual({ ok: false, error: "notExact" });
-    expect(validateBill({ subtotal, payments: [] })).toEqual({ ok: false, error: "notExact" });
+describe("receiptFor", () => {
+  it("records what came in, up to what is left", () => {
+    expect(receiptFor("upi", rupees(300), rupees(660))).toEqual({ ok: true, value: { amount: rupees(300), change: 0 } });
+    expect(receiptFor("cash", rupees(660), rupees(660))).toEqual({ ok: true, value: { amount: rupees(660), change: 0 } });
   });
 
-  it("counts the discount, which can't exceed the bill", () => {
-    const discount = { amount: rupees(40), reason: "" };
-    expect(validateBill({ subtotal, discount, payments: [upi(850)] }).ok).toBe(true);
-    expect(validateBill({ subtotal, discount: { amount: rupees(891), reason: "" }, payments: [] })).toEqual({
-      ok: false,
-      error: "discountTooLarge",
-    });
-    expect(validateBill({ subtotal, discount: { amount: paise(0), reason: "" }, payments: [cash(890)] })).toEqual({
-      ok: false,
-      error: "discountTooLarge",
-    });
+  it("gives change for a bigger note, but UPI is exact", () => {
+    expect(receiptFor("cash", rupees(1000), rupees(660))).toEqual({ ok: true, value: { amount: rupees(660), change: rupees(340) } });
+    expect(receiptFor("upi", rupees(1000), rupees(660))).toEqual({ ok: false, error: "moreThanDue" });
   });
 
-  it("settles a ₹0 bill with no payments, and refuses ₹0 payments", () => {
-    expect(validateBill({ subtotal: paise(0), payments: [] }).ok).toBe(true);
-    expect(validateBill({ subtotal, discount: { amount: subtotal, reason: "On the house" }, payments: [] }).ok).toBe(true);
-    expect(validateBill({ subtotal, payments: [cash(890), upi(0)] })).toEqual({ ok: false, error: "zeroPayment" });
-  });
-});
-
-describe("paying", () => {
-  it("pays in full with one method, or nothing for ₹0", () => {
-    expect(fullPayment("upi", rupees(890))).toEqual([upi(890)]);
-    expect(fullPayment("cash", paise(0))).toEqual([]);
-  });
-
-  it("splits: the cash typed, UPI the rest, exact by construction", () => {
-    expect(splitPayment(rupees(890), rupees(500))).toEqual({ ok: true, value: [cash(500), upi(390)] });
-    expect(splitPayment(paise(89050), paise(50001))).toEqual({
-      ok: true,
-      value: [
-        { method: "cash", amount: 50001 },
-        { method: "upi", amount: 39049 },
-      ],
-    });
-  });
-
-  it("drops an empty side of a split, and refuses more cash than due", () => {
-    expect(splitPayment(rupees(890), rupees(890))).toEqual({ ok: true, value: [cash(890)] });
-    expect(splitPayment(rupees(890), paise(0))).toEqual({ ok: true, value: [upi(890)] });
-    expect(splitPayment(rupees(890), rupees(891))).toEqual({ ok: false, error: "moreThanDue" });
-  });
-});
-
-describe("change", () => {
-  it("offers the round amounts a guest hands over", () => {
-    expect(tenderOptions(rupees(890))).toEqual([rupees(900), rupees(1000), rupees(2000)]);
-    expect(tenderOptions(rupees(360))).toEqual([rupees(400), rupees(500), rupees(1000)]);
-    expect(tenderOptions(rupees(1240))).toEqual([rupees(1300), rupees(1500), rupees(2000)]);
-    expect(tenderOptions(paise(4550))).toEqual([rupees(50), rupees(100), rupees(500)]);
-  });
-
-  it("offers only amounts above the bill, and nothing for ₹0", () => {
-    expect(tenderOptions(rupees(500))).toEqual([rupees(550), rupees(600), rupees(1000)]);
-    expect(tenderOptions(paise(0))).toEqual([]);
-  });
-
-  it("works out the change", () => {
-    expect(changeFor(rupees(890), rupees(1000))).toBe(rupees(110));
-    expect(changeFor(rupees(890), rupees(890))).toBe(0);
-    expect(changeFor(rupees(890), rupees(500))).toBeUndefined();
-  });
-});
-
-describe("quoteBill", () => {
-  const empty = { finalAmount: "", reason: "", cash: "" };
-
-  it("is the whole bill until something is typed", () => {
-    expect(quoteBill(rupees(890), empty)).toEqual({
-      subtotal: rupees(890),
-      due: rupees(890),
-      discount: { ok: true, value: undefined },
-      tender: [rupees(900), rupees(1000), rupees(2000)],
-      change: undefined,
-      split: { ok: false, error: "empty" },
-    });
-  });
-
-  it("discounts to the typed amount and quotes everything from it", () => {
-    const quote = quoteBill(rupees(890), { ...empty, finalAmount: "850", reason: "Regular", given: rupees(1000) });
-    expect(quote).toMatchObject({ due: rupees(850), discount: { ok: true, value: { amount: rupees(40), reason: "Regular" } } });
-    expect(quote.change).toBe(rupees(150));
-  });
-
-  it("keeps the full bill while the typed amount is wrong", () => {
-    expect(quoteBill(rupees(890), { ...empty, finalAmount: "9oo" })).toMatchObject({ due: rupees(890), discount: { error: "invalid" } });
-    expect(quoteBill(rupees(890), { ...empty, finalAmount: "900" })).toMatchObject({ due: rupees(890), discount: { error: "upward" } });
-  });
-
-  it("splits from the cash typed", () => {
-    expect(quoteBill(rupees(890), { ...empty, cash: "500" }).split).toEqual({ ok: true, value: [cash(500), upi(390)] });
-    expect(quoteBill(rupees(890), { ...empty, cash: "5oo" }).split).toEqual({ ok: false, error: "invalid" });
-    expect(quoteBill(rupees(890), { ...empty, finalAmount: "850", cash: "860" }).split).toEqual({ ok: false, error: "moreThanDue" });
-  });
-
-  it("has no change when the note is too small", () => {
-    expect(quoteBill(rupees(890), { ...empty, given: rupees(500) }).change).toBeUndefined();
+  it("refuses nothing, and anything once nothing is left", () => {
+    expect(receiptFor("cash", paise(0), rupees(660))).toEqual({ ok: false, error: "zero" });
+    expect(receiptFor("cash", rupees(10), paise(0))).toEqual({ ok: false, error: "moreThanDue" });
   });
 });
 
 describe("takings", () => {
   it("adds the day's payments by drawer", () => {
-    const bills = [
-      { subtotal: rupees(890), payments: [cash(500), upi(390)] },
-      { subtotal: rupees(300), discount: { amount: rupees(20), reason: "" }, payments: [cash(280)] },
-      { subtotal: paise(0), payments: [] },
+    const payments = [
+      { method: "cash" as const, amount: rupees(500) },
+      { method: "upi" as const, amount: rupees(390) },
+      { method: "cash" as const, amount: rupees(280) },
     ];
-    expect(takings(bills)).toEqual({ total: rupees(1170), cash: rupees(780), upi: rupees(390) });
+    expect(takings(payments)).toEqual({ total: rupees(1170), cash: rupees(780), upi: rupees(390) });
     expect(takings([])).toEqual({ total: 0, cash: 0, upi: 0 });
+  });
+});
+
+describe("quoteBill", () => {
+  const empty: BillInput = { finalAmount: "", reason: "", method: null, received: "" };
+
+  it("is the whole bill, and no payment until a method is chosen", () => {
+    expect(quoteBill(rupees(660), paise(0), empty)).toEqual({
+      subtotal: rupees(660),
+      due: rupees(660),
+      discount: { ok: true, value: undefined },
+      paid: 0,
+      remaining: rupees(660),
+      receipt: null,
+      settles: false,
+    });
+  });
+
+  it("settles only when the payment covers exactly what is left", () => {
+    expect(quoteBill(rupees(660), paise(0), { ...empty, method: "upi", received: "660" }).settles).toBe(true);
+    expect(quoteBill(rupees(660), paise(0), { ...empty, method: "cash", received: "1000" })).toMatchObject({
+      settles: true,
+      receipt: { ok: true, value: { amount: rupees(660), change: rupees(340) } },
+    });
+    expect(quoteBill(rupees(660), paise(0), { ...empty, method: "upi", received: "300" }).settles).toBe(false);
+    expect(quoteBill(rupees(660), rupees(300), { ...empty, method: "upi", received: "360" }).settles).toBe(true);
+  });
+
+  it("quotes from the discount, never below what was paid", () => {
+    expect(quoteBill(rupees(660), paise(0), { ...empty, finalAmount: "600", method: "cash", received: "600" })).toMatchObject({
+      due: rupees(600),
+      settles: true,
+    });
+    expect(quoteBill(rupees(660), rupees(300), { ...empty, finalAmount: "200" })).toMatchObject({
+      due: rupees(660),
+      discount: { ok: false, error: "belowPaid" },
+    });
+  });
+
+  it("says what is wrong with the amount", () => {
+    expect(quoteBill(rupees(660), paise(0), { ...empty, method: "cash" }).receipt).toEqual({ ok: false, error: "empty" });
+    expect(quoteBill(rupees(660), paise(0), { ...empty, method: "cash", received: "6oo" }).receipt).toEqual({ ok: false, error: "invalid" });
+    expect(quoteBill(rupees(660), paise(0), { ...empty, finalAmount: "9oo", method: "cash", received: "660" }).settles).toBe(false);
+  });
+
+  it("shows an overpaid bill as below zero", () => {
+    expect(quoteBill(rupees(660), rupees(1320), empty).remaining).toBe(-rupees(660));
   });
 });

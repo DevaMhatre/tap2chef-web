@@ -7,11 +7,13 @@ import { dexieSyncRepository } from "./infrastructure/db/dexieSyncRepository";
 import { newId } from "./infrastructure/id";
 import { browserNetworkStatus } from "./infrastructure/network";
 import AppShell from "./ui/AppShell";
+import { CompletionProvider } from "./ui/design-system/Completion";
 import { UndoToastProvider } from "./ui/design-system/UndoToast";
 import ComingSoon from "./ui/pages/ComingSoon";
 import MenuPage from "./ui/pages/MenuPage";
 import OrderPage from "./ui/pages/OrderPage";
 import OrdersPage from "./ui/pages/OrdersPage";
+import SettledPage from "./ui/pages/SettledPage";
 import TablesPage from "./ui/pages/TablesPage";
 import Today from "./ui/pages/Today";
 
@@ -30,6 +32,7 @@ export default function App() {
   return (
     <PortsProvider ports={ports}>
       <UndoToastProvider>
+        <CompletionProvider>
         <BrowserRouter>
           <Routes>
             <Route element={<AppShell />}>
@@ -37,6 +40,7 @@ export default function App() {
               <Route path="tables" element={<TablesPage />} />
               <Route path="tables/:tableId" element={<OrderPage />} />
               <Route path="orders" element={<OrdersPage />} />
+              <Route path="orders/settled" element={<SettledPage />} />
               <Route path="orders/:orderId" element={<OrderPage />} />
               <Route path="menu" element={<MenuPage />} />
               <Route
@@ -48,6 +52,7 @@ export default function App() {
             </Route>
           </Routes>
         </BrowserRouter>
+        </CompletionProvider>
       </UndoToastProvider>
     </PortsProvider>
   );

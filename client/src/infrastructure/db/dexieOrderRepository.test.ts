@@ -2,7 +2,7 @@ import "fake-indexeddb/auto";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { ItemId, ProfileId } from "../../domain/menu";
 import { paise } from "../../domain/money";
-import type { BusinessDate, LineId, Order, OrderId, OrderLine, RoundId } from "../../domain/order";
+import type { BusinessDate, LineId, Order, OrderId, OrderLine, Payment, PaymentId, RoundId } from "../../domain/order";
 import type { DiningTable, TableId } from "../../domain/tables";
 import type { OrderSnapshot } from "../../usecases/ports";
 import { db } from "./db";
@@ -57,43 +57,51 @@ describe("dexieOrderRepository", () => {
       { op: "put", table: "outOfStock", record: out },
     ]);
     const s = await next(TODAY, (s) => s.lines.length === 1);
-    expect(s).toEqual({ tables: [table], orders: [order], lines: [line], outOfStock: [out] });
+    expect(s).toEqual({ tables: [table], orders: [order], lines: [line], payments: [], outOfStock: [out] });
     expect((await db.orders.get(order.id))!.status).toBe("open");
     expect(await db.outbox.count()).toBe(4);
   });
 
-  it("round-trips a settled bill, and an undone settle leaves no bill behind", async () => {
+  it("round-trips a billed and a settled order with their payments, and undo leaves nothing behind", async () => {
+    const billed: Order = { ...order, state: { status: "billed", billedAt: 150, discount: { amount: paise(500), reason: "Regular" } } };
+    const payment: Payment = { id: "p1" as PaymentId, orderId: order.id, amount: paise(1500), receivedAt: 160, method: "cash" };
+    const upi: Payment = { id: "p2" as PaymentId, orderId: order.id, amount: paise(2000), receivedAt: 170, method: "upi", correctedAt: 300 };
+    await dexieOrderRepository.write([
+      { op: "put", table: "orders", record: billed },
+      { op: "put", table: "payments", record: payment },
+    ]);
+    expect(await next(TODAY, (s) => s.payments.length === 1)).toMatchObject({ orders: [billed], payments: [payment] });
+    expect((await db.orders.get(order.id))!.status).toBe("billed");
+
     const settled: Order = {
       ...order,
-      state: {
-        status: "settled",
-        settledAt: 200,
-        correctedAt: 300,
-        bill: {
-          subtotal: paise(4000),
-          discount: { amount: paise(500), reason: "Regular" },
-          payments: [
-            { method: "cash", amount: paise(1500) },
-            { method: "upi", amount: paise(2000) },
-          ],
-        },
-      },
+      state: { status: "settled", billedAt: 150, settledAt: 200, subtotal: paise(4000), discount: { amount: paise(500), reason: "Regular" } },
     };
-    await dexieOrderRepository.write([{ op: "put", table: "orders", record: settled }]);
-    expect((await next(TODAY, (s) => s.orders.length === 1)).orders).toEqual([settled]);
-    expect((await db.orders.get(order.id))!.status).toBe("settled");
+    await dexieOrderRepository.write([
+      { op: "put", table: "orders", record: settled },
+      { op: "put", table: "payments", record: upi },
+    ]);
+    expect(await next(TODAY, (s) => s.payments.length === 2)).toMatchObject({ orders: [settled], payments: [payment, upi] });
 
-    await dexieOrderRepository.write([{ op: "put", table: "orders", record: order }]);
-    expect((await next(TODAY, (s) => s.orders[0]?.state.status === "open")).orders).toEqual([order]);
+    await dexieOrderRepository.write([
+      { op: "put", table: "orders", record: order },
+      { op: "remove", table: "payments", record: upi },
+    ]);
+    const after = await next(TODAY, (s) => s.orders[0]?.state.status === "open");
+    expect(after.payments).toEqual([payment]);
     expect((await db.orders.get(order.id))!.state).toEqual({ status: "open" });
   });
 
-  it("skips a settled bill with a malformed payment", async () => {
+  it("skips malformed payments from sync", async () => {
     const meta = { tenantId: "t", createdAt: 1, updatedAt: 1, deleted: false };
-    const bill = { subtotal: 4000, payments: [{ method: "card", amount: 4000 }] };
-    await db.orders.put({ ...meta, ...order, status: "settled", state: { status: "settled", settledAt: 200, bill } });
-    await dexieOrderRepository.write([{ op: "put", table: "orders", record: { ...order, id: "o2" as OrderId } }]);
-    expect((await next(TODAY, (s) => s.orders.length > 0)).orders.map((o) => o.id)).toEqual(["o2"]);
+    await dexieOrderRepository.write([{ op: "put", table: "orders", record: order }]);
+    await db.payments.bulkPut([
+      { ...meta, id: "good", orderId: order.id, amount: 100, receivedAt: 5, method: "cash" },
+      { ...meta, id: "card", orderId: order.id, amount: 100, receivedAt: 5, method: "card" },
+      { ...meta, id: "float", orderId: order.id, amount: 1.5, receivedAt: 5, method: "upi" },
+      { ...meta, id: "zero", orderId: order.id, amount: 0, receivedAt: 5, method: "upi" },
+    ]);
+    expect((await next(TODAY, (s) => s.payments.length > 0)).payments.map((p) => p.id)).toEqual(["good"]);
   });
 
   it("leaves out yesterday's out-of-stock but keeps an order still open from yesterday", async () => {

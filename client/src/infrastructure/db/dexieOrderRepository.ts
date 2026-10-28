@@ -11,10 +11,12 @@ import type {
   OrderLine,
   OrderState,
   OutOfStock,
+  Payment,
+  PaymentId,
   RoundId,
   VoidReason,
 } from "../../domain/order";
-import type { Bill, Discount, Payment } from "../../domain/settlement";
+import type { Discount } from "../../domain/settlement";
 import type { DiningTable, TableId } from "../../domain/tables";
 import type { OrderChange, OrderRecord, OrderRepository, OrderSnapshot } from "../../usecases/ports";
 import { db, type StoredRecord, type SyncedTable } from "./db";
@@ -27,6 +29,7 @@ const TABLES: Record<OrderRecord["table"], SyncedTable> = {
   tables: "diningTables",
   orders: "orders",
   lines: "orderItems",
+  payments: "payments",
   outOfStock: "outOfStock",
 };
 
@@ -48,42 +51,37 @@ function toChannel(value: unknown): OrderChannel | undefined {
   return undefined;
 }
 
-function toPayment(value: unknown): Payment | undefined {
-  if (!isObject(value) || !isPaise(value.amount) || value.amount === 0) return undefined;
-  const amount = value.amount as Paise;
-  if (value.method === "cash") return { method: "cash", amount };
-  if (value.method !== "upi") return undefined;
-  if (value.ref !== undefined && !isText(value.ref)) return undefined;
-  return { method: "upi", amount, ...(value.ref !== undefined && { ref: value.ref }) };
-}
-
 function toDiscount(value: unknown): Discount | undefined {
-  if (!isObject(value) || !isPaise(value.amount) || typeof value.reason !== "string") return undefined;
+  if (!isObject(value) || !isPaise(value.amount) || value.amount === 0 || typeof value.reason !== "string") return undefined;
   return { amount: value.amount as Paise, reason: value.reason };
 }
 
-function toBill(value: unknown): Bill | undefined {
-  if (!isObject(value) || !isPaise(value.subtotal) || !Array.isArray(value.payments)) return undefined;
-  const payments = value.payments.map(toPayment);
-  if (payments.some((p) => !p)) return undefined;
-  const discount = value.discount === undefined ? undefined : toDiscount(value.discount);
-  if (value.discount !== undefined && !discount) return undefined;
-  return { subtotal: value.subtotal as Paise, ...(discount && { discount }), payments: payments as Payment[] };
-}
-
 // `status` is also stored flat, so open orders can be read by index. The
-// state itself is one field, replaced whole: an undone settle leaves no bill behind.
+// state itself is one field, replaced whole: an undone settle leaves nothing behind.
 function toOrderState(status: unknown, value: unknown): OrderState | undefined {
   if (status === "open") return { status: "open" };
-  if (status !== "settled" || !isObject(value) || !isTime(value.settledAt)) return undefined;
-  const bill = toBill(value.bill);
-  if (!bill || (value.correctedAt !== undefined && !isTime(value.correctedAt))) return undefined;
-  return {
-    status: "settled",
-    settledAt: value.settledAt,
-    bill,
-    ...(value.correctedAt !== undefined && { correctedAt: value.correctedAt }),
+  if (!isObject(value) || !isTime(value.billedAt)) return undefined;
+  const discount = value.discount === undefined ? undefined : toDiscount(value.discount);
+  if (value.discount !== undefined && !discount) return undefined;
+  const extra = discount ? { discount } : {};
+  if (status === "billed") return { status: "billed", billedAt: value.billedAt, ...extra };
+  if (status !== "settled" || !isTime(value.settledAt) || !isPaise(value.subtotal)) return undefined;
+  return { status: "settled", billedAt: value.billedAt, settledAt: value.settledAt, subtotal: value.subtotal as Paise, ...extra };
+}
+
+function toPayment(r: StoredRecord): Payment | undefined {
+  if (!isText(r.orderId) || !isPaise(r.amount) || r.amount === 0 || !isTime(r.receivedAt)) return undefined;
+  if (r.correctedAt !== undefined && !isTime(r.correctedAt)) return undefined;
+  const base = {
+    id: r.id as PaymentId,
+    orderId: r.orderId as OrderId,
+    amount: r.amount as Paise,
+    receivedAt: r.receivedAt,
+    ...(r.correctedAt !== undefined && { correctedAt: r.correctedAt }),
   };
+  if (r.method === "cash") return { ...base, method: "cash" };
+  if (r.method !== "upi" || (r.ref !== undefined && !isText(r.ref))) return undefined;
+  return { ...base, method: "upi", ...(r.ref !== undefined && { ref: r.ref }) };
 }
 
 function toOrder(r: StoredRecord): Order | undefined {
@@ -151,14 +149,16 @@ async function readOrders(since: BusinessDate): Promise<OrderSnapshot> {
   ]);
   const orderRows = [...new Map([...open, ...recent].map((r) => [r.id, r])).values()];
   const orders = readAll(orderRows, toOrder, "order");
-  const lines = await db.orderItems
-    .where("orderId")
-    .anyOf(orders.map((o) => o.id))
-    .toArray();
+  const ids = orders.map((o) => o.id);
+  const [lines, payments] = await Promise.all([
+    db.orderItems.where("orderId").anyOf(ids).toArray(),
+    db.payments.where("orderId").anyOf(ids).toArray(),
+  ]);
   return {
     tables: readAll(tables, toTable, "table"),
     orders,
     lines: readAll(lines, toLine, "line"),
+    payments: readAll(payments, toPayment, "payment"),
     outOfStock: readAll(outOfStock, toOutOfStock, "out-of-stock"),
   };
 }

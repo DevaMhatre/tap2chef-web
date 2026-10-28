@@ -5,8 +5,10 @@ import {
   activeOrderAt,
   activeOrders,
   addToDraft,
+  billOf,
   businessDate,
-  correctPayments,
+  closeBill,
+  correctPayment,
   dayBefore,
   defaultProfile,
   floorOf,
@@ -14,8 +16,10 @@ import {
   orderTotal,
   outOfStockId,
   outOn,
+  presentBill,
+  receivePayment,
+  reopenForDishes,
   sendDraft,
-  settle,
   settledOn,
   ticketOf,
   voidSent,
@@ -26,8 +30,11 @@ import {
   type Order,
   type OrderId,
   type OrderLine,
+  type Payment,
+  type PaymentId,
   type RoundId,
 } from "./order";
+import type { Discount } from "./settlement";
 import type { DiningTable, TableId } from "./tables";
 
 const DAY = "2026-10-29" as BusinessDate;
@@ -141,105 +148,97 @@ describe("voidSent", () => {
   });
 });
 
-describe("settle", () => {
-  const cash = (amount: number) => ({ method: "cash" as const, amount: paise(amount) });
-  const upi = (amount: number) => ({ method: "upi" as const, amount: paise(amount) });
-  const sentLines = [sent(draftLine("l1", roti, 2), "r1", 10), sent(draftLine("l2", paneer), "r1", 10)];
+describe("the bill", () => {
+  const sentLines = [sent(draftLine("l1", roti, 2), "r1", 10), sent(draftLine("l2", paneer), "r1", 10)]; // ₹280
+  const billed = (): Order => {
+    const result = presentBill(order("o1"), sentLines, 20);
+    if (!result.ok) throw new Error(result.error);
+    return result.value;
+  };
+  const pay = (o: Order, payments: Payment[], amount: number, id: string, method: "cash" | "upi" = "upi", discount?: Discount) =>
+    receivePayment(o, sentLines, payments, discount, { method }, paise(amount), id as PaymentId, 30);
 
-  it("settles when payments match the dishes, and keeps what was billed", () => {
-    const result = settle(order("o1"), sentLines, [cash(10000), upi(18000)], undefined, 50);
-    expect(result).toEqual({
-      ok: true,
-      value: { ...order("o1"), state: { status: "settled", settledAt: 50, bill: { subtotal: 28000, payments: [cash(10000), upi(18000)] } } },
-    });
+  it("is presented once everything is sent, and keeps the table", () => {
+    expect(billed().state).toEqual({ status: "billed", billedAt: 20 });
+    expect(presentBill(billed(), sentLines, 99)).toEqual({ ok: true, value: billed() });
+    expect(presentBill(order("o1"), [...sentLines, draftLine("l3", roti)], 20)).toEqual({ ok: false, error: "unsent" });
+    expect(presentBill(order("o1"), [], 20)).toEqual({ ok: false, error: "empty" });
+    expect(activeOrders([billed()], sentLines)).toHaveLength(1);
   });
 
-  it("frees the table", () => {
-    const result = settle(order("o1"), sentLines, [cash(28000)], undefined, 50);
-    expect(result.ok && activeOrders([result.value], sentLines)).toEqual([]);
+  it("takes money in parts and settles on the payment that leaves nothing", () => {
+    const first = pay(billed(), [], 10000, "p1");
+    if (!first.ok) throw new Error(first.error);
+    expect(first.value.order.state.status).toBe("billed");
+    expect(first.value.payment).toEqual({ id: "p1", orderId: "o1", amount: 10000, receivedAt: 30, method: "upi" });
+    expect(billOf(first.value.order, sentLines, [first.value.payment])).toMatchObject({ due: 28000, paid: 10000, remaining: 18000 });
+
+    const last = pay(first.value.order, [first.value.payment], 18000, "p2", "cash");
+    expect(last.ok && last.value.order.state).toEqual({ status: "settled", billedAt: 20, settledAt: 30, subtotal: 28000 });
+    expect(last.ok && activeOrders([last.value.order], sentLines, [first.value.payment, last.value.payment])).toEqual([]);
   });
 
-  it("takes the discount into account", () => {
+  it("settles to the discounted amount and keeps the discount", () => {
     const discount = { amount: paise(3000), reason: "Regular" };
-    expect(settle(order("o1"), sentLines, [upi(25000)], discount, 50)).toMatchObject({
-      ok: true,
-      value: { state: { bill: { subtotal: 28000, discount } } },
+    const result = pay(billed(), [], 25000, "p1", "cash", discount);
+    expect(result.ok && result.value.order.state).toMatchObject({ status: "settled", subtotal: 28000, discount });
+    expect(pay(billed(), [], 25000, "p1", "cash", { amount: paise(28001), reason: "" })).toEqual({ ok: false, error: "discount" });
+  });
+
+  it("refuses more than is left, nothing, and money for an unbilled or settled order", () => {
+    expect(pay(billed(), [], 28001, "p1")).toEqual({ ok: false, error: "moreThanDue" });
+    expect(pay(billed(), [], 0, "p1")).toEqual({ ok: false, error: "zero" });
+    expect(pay(order("o1"), [], 100, "p1")).toEqual({ ok: false, error: "notBilled" });
+    const settledOrder = pay(billed(), [], 28000, "p1");
+    expect(settledOrder.ok && pay(settledOrder.value.order, [], 100, "p2")).toEqual({ ok: false, error: "notBilled" });
+  });
+
+  it("stops when two devices took the same bill, and shows it", () => {
+    const twice: Payment[] = ["a", "b"].map((id) => ({ id: id as PaymentId, orderId: "o1" as OrderId, amount: paise(28000), receivedAt: 30, method: "cash" }));
+    expect(billOf(billed(), sentLines, twice).remaining).toBe(-28000);
+    expect(pay(billed(), twice, 100, "p3")).toEqual({ ok: false, error: "overpaid" });
+    expect(activeOrders([billed()], sentLines, twice)).toHaveLength(1);
+  });
+
+  it("closes a bill with nothing to pay", () => {
+    const water = [sent(draftLine("w", dish("Water", 0)), "r1", 1)];
+    const presented = presentBill(order("o1"), water, 5);
+    expect(presented.ok && closeBill(presented.value, water, [], undefined, 9)).toMatchObject({ ok: true, value: { state: { status: "settled" } } });
+    expect(closeBill(billed(), sentLines, [], { amount: paise(28000), reason: "On the house" }, 9).ok).toBe(true);
+    expect(closeBill(billed(), sentLines, [], undefined, 9)).toEqual({ ok: false, error: "unpaid" });
+  });
+
+  it("goes back to open when a dish is added, dropping the discount", () => {
+    expect(reopenForDishes({ ...billed(), state: { status: "billed", billedAt: 20, discount: { amount: paise(100), reason: "" } } }).state).toEqual({
+      status: "open",
     });
-    expect(settle(order("o1"), sentLines, [upi(28000)], discount, 50)).toEqual({ ok: false, error: "notExact" });
   });
 
-  it("doesn't charge for cancelled dishes, nor count another order's", () => {
-    const voided = voidSent(sentLines[1]!, 1, undefined, "x" as LineId, 20);
-    const lines = [sentLines[0]!, ...(voided.ok ? voided.value : []), sent(draftLine("o2l", paneer, 1, "o2"), "r9", 1)];
-    expect(settle(order("o1"), lines, [cash(4000)], undefined, 50).ok).toBe(true);
+  it("keeps a settled bill's snapshot, whatever happens to the lines", () => {
+    const result = pay(billed(), [], 28000, "p1");
+    if (!result.ok) throw new Error(result.error);
+    expect(billOf(result.value.order, [], [result.value.payment])).toMatchObject({ subtotal: 28000, remaining: 0 });
   });
+});
 
-  it("refuses while a dish is still in the cart", () => {
-    expect(settle(order("o1"), [...sentLines, draftLine("l3", roti)], [cash(30000)], undefined, 50)).toEqual({
-      ok: false,
-      error: "unsent",
-    });
-  });
+describe("correctPayment", () => {
+  const payment: Payment = { id: "p1" as PaymentId, orderId: "o1" as OrderId, amount: paise(500), receivedAt: 3, method: "cash" };
 
-  it("refuses an empty bill and a second settle", () => {
-    const voided = voidSent(sentLines[0]!, 2, undefined, "x" as LineId, 20);
-    expect(settle(order("o1"), voided.ok ? voided.value : [], [], undefined, 50)).toEqual({ ok: false, error: "empty" });
-    expect(settle(order("o1"), [], [], undefined, 50)).toEqual({ ok: false, error: "empty" });
-
-    const settled = settle(order("o1"), sentLines, [cash(28000)], undefined, 50);
-    expect(settled.ok && settle(settled.value, sentLines, [cash(28000)], undefined, 60)).toEqual({ ok: false, error: "settled" });
-  });
-
-  it("settles a bill of ₹0 dishes with no payment", () => {
-    const water = sent(draftLine("w", dish("Water", 0)), "r1", 1);
-    expect(settle(order("o1"), [water], [], undefined, 50).ok).toBe(true);
+  it("changes the method, keeps the amount, and leaves a mark", () => {
+    expect(correctPayment(payment, "upi", 9)).toEqual({ ok: true, value: { ...payment, method: "upi", correctedAt: 9 } });
+    expect(correctPayment(payment, "cash", 9)).toEqual({ ok: false, error: "unchanged" });
   });
 });
 
 describe("settledOn", () => {
-  const paid = (id: string, at: number, day = DAY) => {
-    const lines = [sent(draftLine(`${id}-l`, roti, 1, id), "r", 1)];
-    const result = settle(order(id, { businessDate: day }), lines, [{ method: "cash", amount: paise(2000) }], undefined, at);
-    if (!result.ok) throw new Error(result.error);
-    return result.value;
-  };
+  const paid = (id: string, at: number, day = DAY): Order => ({
+    ...order(id, { businessDate: day }),
+    state: { status: "settled", billedAt: at, settledAt: at, subtotal: paise(2000) },
+  });
 
   it("lists the day's paid bills, latest first, and nothing open or from another day", () => {
     const orders = [paid("a", 10), paid("b", 30), order("open"), paid("old", 20, "2026-10-28" as BusinessDate)];
     expect(settledOn(orders, DAY).map((o) => o.id)).toEqual(["b", "a"]);
-  });
-});
-
-describe("correctPayments", () => {
-  const cash = (amount: number) => ({ method: "cash" as const, amount: paise(amount) });
-  const upi = (amount: number) => ({ method: "upi" as const, amount: paise(amount) });
-  const lines = [sent(draftLine("l1", paneer), "r1", 10)];
-  const settled = settle(order("o1"), lines, [cash(23000)], { amount: paise(1000), reason: "" }, 50);
-  if (!settled.ok) throw new Error(settled.error);
-  const bill = settled.value;
-
-  it("changes the method, keeps the amount and the discount, and leaves a mark", () => {
-    expect(correctPayments(bill, [upi(23000)], 90)).toMatchObject({
-      ok: true,
-      value: {
-        state: {
-          status: "settled",
-          settledAt: 50,
-          correctedAt: 90,
-          bill: { subtotal: 24000, discount: { amount: 1000 }, payments: [upi(23000)] },
-        },
-      },
-    });
-    expect(correctPayments(bill, [cash(3000), upi(20000)], 90).ok).toBe(true);
-  });
-
-  it("never moves the amount", () => {
-    expect(correctPayments(bill, [upi(24000)], 90)).toEqual({ ok: false, error: "amountChanged" });
-    expect(correctPayments(bill, [cash(23000), upi(0)], 90)).toEqual({ ok: false, error: "zeroPayment" });
-  });
-
-  it("applies only to a settled bill", () => {
-    expect(correctPayments(order("o1"), [], 90)).toEqual({ ok: false, error: "notSettled" });
   });
 });
 

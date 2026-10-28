@@ -18,15 +18,18 @@ import {
   ticketOf,
   type Order,
   type OrderId,
-  type SettleError,
+  billOf,
+  type BillError,
+  type BillView,
+  type PaymentError,
   type Ticket,
 } from "../domain/order";
 import { sortByOrder } from "../domain/ordering";
-import type { Paise } from "../domain/money";
-import { err, type Result } from "../domain/result";
-import { amountPaid, paymentsFor, quoteBill, type BillInput, type BillQuote, type PayBy } from "../domain/settlement";
+import { toRupeeText, type Paise } from "../domain/money";
+import { err, ok, type Result } from "../domain/result";
+import { amountPaid, quoteBill, type BillInput, type BillQuote } from "../domain/settlement";
 import type { DiningTable, TableId } from "../domain/tables";
-import type { OrderCommands, Undo } from "./orderDesk";
+import type { CloseError, OrderCommands, Undo } from "./orderDesk";
 import { usePorts } from "./PortsProvider";
 import { labelOf, type OrderLabel } from "./useOrders";
 import { useMenuSnapshot, useOrderDesk } from "./useOrderDesk";
@@ -35,7 +38,10 @@ export type OrderTarget = { kind: "table"; tableId: TableId } | { kind: "takeawa
 
 export type DishRow = OrderableItem & { out: boolean; inCart: number };
 
-export type { PayBy };
+/** The screen's one primary action: send what's in the cart, hand over the bill, or take the money. */
+export type NextStep = "send" | "bill" | "settle" | null;
+
+export type Received = { settled: boolean; undo: Undo; change: Paise };
 
 export type OrderScreen =
   | { state: "loading" }
@@ -63,10 +69,20 @@ export type OrderScreen =
       send(): Promise<number>;
       moveTo(tableId: TableId): ReturnType<OrderCommands["moveOrder"]>;
       /** The bill can close once nothing is waiting to go to the kitchen. */
-      canSettle: boolean;
+      next: NextStep;
+      /** What the table owes and has paid so far. */
+      bill: BillView;
+      presentBill(): Promise<Result<void, BillError>>;
+      /** Where the bill sheet starts: a discount already agreed stays agreed. */
+      billInput: BillInput;
       quote(input: BillInput): BillQuote;
-      /** `invalid`: what was typed doesn't make a bill yet; the quote says why. */
-      settle(input: BillInput, by: PayBy): Promise<Result<Undo, SettleError | "invalid">>;
+      /**
+       * Records the payment on the sheet; the one that leaves nothing settles.
+       * `invalid`: what was typed doesn't make a payment yet; the quote says why.
+       */
+      receive(input: BillInput): Promise<Result<Received, PaymentError | "missing" | "invalid">>;
+      /** A bill with nothing left to pay. */
+      closeBill(input: BillInput): Promise<Result<Undo, CloseError | "invalid">>;
     } & Pick<OrderCommands, "stepQuantity" | "setNote" | "removeLine" | "voidLine" | "setOutToday">);
 
 export type ReadyOrder = Extract<OrderScreen, { state: "ready" }>;
@@ -85,12 +101,13 @@ export function useOrder(target: OrderTarget): OrderScreen {
   if (target.kind === "takeaway") {
     const paid = snapshot.orders.find((o) => o.id === target.orderId);
     if (paid?.state.status === "settled") {
-      return { state: "settled", label: labelOf({ order: paid }, snapshot.tables), paid: amountPaid(paid.state.bill.payments) };
+      const own = snapshot.payments.filter((p) => p.orderId === paid.id);
+      return { state: "settled", label: labelOf({ order: paid }, snapshot.tables), paid: amountPaid(own) };
     }
   }
   if (menu.profiles.length === 0 || menu.items.length === 0) return { state: "noMenu" };
 
-  const active = activeOrders(snapshot.orders, snapshot.lines);
+  const active = activeOrders(snapshot.orders, snapshot.lines, snapshot.payments);
   const running =
     target.kind === "table" ? activeOrderAt(target.tableId, active) : active.find((a) => a.order.id === target.orderId);
   const lines = running?.lines ?? [];
@@ -133,7 +150,11 @@ export function useOrder(target: OrderTarget): OrderScreen {
   }));
   const dishes = sections.flatMap((s) => s.items);
   const ticket = ticketOf(lines);
-  const quote = (input: BillInput) => quoteBill(ticket.total, input);
+  const bill = running?.bill ?? billOf(order, [], []);
+  const quote = (input: BillInput) => quoteBill(bill.subtotal, bill.paid, input);
+  const status = order.state.status;
+  const next: NextStep =
+    ticket.draft.length > 0 ? "send" : status === "billed" ? "settle" : status === "open" && ticket.rounds.length > 0 ? "bill" : null;
   const busy = new Set(active.flatMap((a) => (a.order.channel.type === "dineIn" ? [a.order.channel.tableId] : [])));
 
   return {
@@ -156,16 +177,29 @@ export function useOrder(target: OrderTarget): OrderScreen {
     removeLine: commands.removeLine,
     voidLine: commands.voidLine,
     setOutToday: commands.setOutToday,
-    canSettle: ticket.rounds.length > 0 && ticket.draft.length === 0,
+    next,
+    bill,
+    presentBill: () => commands.presentBill(order.id),
+    billInput: {
+      finalAmount: bill.discount ? toRupeeText(bill.due) : "",
+      reason: bill.discount?.reason ?? "",
+      method: null,
+      received: "",
+    },
     quote,
-    settle(input, by) {
-      // Quoted from the total on screen: if the stored dishes differ, the
-      // desk refuses rather than charge for something staff didn't see.
+    async receive(input) {
+      // Quoted from the bill on screen; the desk checks it against what is
+      // stored, so a dish or payment added on another tab makes it refuse.
+      const q = quote(input);
+      if (!q.discount.ok || input.method === null || !q.receipt?.ok) return err("invalid");
+      const { amount, change } = q.receipt.value;
+      const result = await commands.receive(order.id, { method: input.method }, amount, q.discount.value);
+      return result.ok ? ok({ ...result.value, change }) : result;
+    },
+    closeBill(input) {
       const q = quote(input);
       if (!q.discount.ok) return Promise.resolve(err("invalid"));
-      const payments = paymentsFor(by, q);
-      if (!payments) return Promise.resolve(err("invalid"));
-      return commands.settle(order.id, payments, q.discount.value);
+      return commands.closeBill(order.id, q.discount.value);
     },
   };
 }

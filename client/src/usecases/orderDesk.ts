@@ -1,31 +1,37 @@
 import { validateName, type ItemId, type NameError, type OrderableItem } from "../domain/menu";
+import type { Paise } from "../domain/money";
 import { keyBetween, placeAt } from "../domain/ordering";
 import {
   activeOrderAt,
   activeOrders,
   addToDraft,
   businessDate,
-  correctPayments,
+  closeBill,
+  correctPayment,
   nextToken,
   outOfStockId,
   outOn,
   sendDraft,
-  settle as settleOrder,
+  presentBill,
+  receivePayment,
+  reopenForDishes,
   voidSent,
   withNote,
   withQuantity,
-  type CorrectionError,
+  type BillError,
   type LineEditError,
   type LineId,
   type Order,
   type OrderId,
   type OrderLine,
   type RoundId,
-  type SettleError,
+  type Payment,
+  type PaymentError,
+  type PaymentId,
   type VoidReason,
 } from "../domain/order";
 import { err, ok, type Result } from "../domain/result";
-import type { Discount, Payment } from "../domain/settlement";
+import type { Discount, PaymentMethod, Tender } from "../domain/settlement";
 import { isTableCount, nextTableName, numberedTables, TABLE_NAME_MAX, type DiningTable, type TableId } from "../domain/tables";
 import { applyChanges } from "./applyChanges";
 import type { Undo } from "./menuEditor";
@@ -38,6 +44,8 @@ type Plan<T> = SerialPlan<OrderChange, T>;
 const nothing = <T>(result: T): Plan<T> => ({ changes: [], result });
 const put = (change: Omit<OrderChange, "op">): OrderChange => ({ ...change, op: "put" }) as OrderChange;
 const remove = (change: Omit<OrderChange, "op">): OrderChange => ({ ...change, op: "remove" }) as OrderChange;
+
+export type CloseError = "notBilled" | "unsent" | "discount" | "unpaid" | "missing";
 
 export type OrderCommands = {
   /** "How many tables?" Does nothing once the shop has tables. */
@@ -66,10 +74,23 @@ export type OrderCommands = {
   moveOrder(orderId: OrderId, tableId: TableId): Promise<Result<void, "occupied">>;
   setOutToday(itemId: ItemId, out: boolean): Promise<void>;
 
-  /** Closes the bill and frees the table. Undo reopens it, unless the table has been taken since. */
-  settle(orderId: OrderId, payments: Payment[], discount?: Discount): Promise<Result<Undo, SettleError>>;
-  /** "It was UPI, not cash." Same amount, other method. */
-  correctPayments(orderId: OrderId, payments: Payment[]): Promise<Result<void, CorrectionError>>;
+  /** "Bill, please." The table stays taken until the money is in. */
+  presentBill(orderId: OrderId): Promise<Result<void, BillError>>;
+  /**
+   * Records money received, with the discount on the sheet. The payment that
+   * leaves nothing to pay settles the bill and frees the table. Undo takes the
+   * payment back, and reopens the bill if it had closed it.
+   */
+  receive(
+    orderId: OrderId,
+    tender: Tender,
+    amount: Paise,
+    discount?: Discount,
+  ): Promise<Result<{ settled: boolean; undo: Undo }, PaymentError | "missing">>;
+  /** Settles a bill with nothing left to pay: ₹0 dishes, or on the house. */
+  closeBill(orderId: OrderId, discount?: Discount): Promise<Result<Undo, CloseError>>;
+  /** "It was UPI, not cash." Same amount, other method, and it shows. */
+  correctPayment(paymentId: PaymentId, method: PaymentMethod): Promise<Result<void, "unchanged" | "missing">>;
 };
 
 export type OrderDesk = {
@@ -97,18 +118,30 @@ export function createOrderDesk(repository: OrderRepository, ids: IdGenerator, c
   const orderIn = (s: OrderSnapshot, id: OrderId) => s.orders.find((o) => o.id === id);
   const isSettled = (s: OrderSnapshot, id: OrderId) => orderIn(s, id)?.state.status === "settled";
 
-  // Back to open, the way it was. Not if it was settled again or corrected
-  // since, nor if a new order already took its table.
-  const reopen =
-    (orderId: OrderId, settledAt: number): Undo =>
+  // Undoing a payment: it goes, and a bill it closed is open for payment
+  // again — unless the bill moved on since, or a new order took its table.
+  const takeBack =
+    (before: Order, after: Order, payment: Payment | null): Undo =>
     () =>
-      run(`reopen:${orderId}`, (s) => {
-        const current = orderIn(s, orderId);
-        const { state } = current ?? {};
-        if (!current || state?.status !== "settled" || state.settledAt !== settledAt || state.correctedAt) return nothing(undefined);
-        const { channel } = current;
-        if (channel.type === "dineIn" && activeOrderAt(channel.tableId, activeOrders(s.orders, s.lines))) return nothing(undefined);
-        return { changes: [put({ table: "orders", record: { ...current, state: { status: "open" } } })], result: undefined };
+      run(`takeBack:${after.id}:${payment?.id ?? "close"}`, (s) => {
+        const current = orderIn(s, after.id);
+        if (!current || (payment && !s.payments.some((p) => p.id === payment.id))) return nothing(undefined);
+        const closedIt = after.state.status === "settled";
+        const { state } = current;
+        // Closed again since, or closed by a later payment: not this undo's to reopen.
+        if (closedIt !== (state.status === "settled")) return nothing(undefined);
+        if (closedIt && state.status === "settled" && after.state.status === "settled" && state.settledAt !== after.state.settledAt) {
+          return nothing(undefined);
+        }
+        const changes: OrderChange[] = payment ? [remove({ table: "payments", record: payment })] : [];
+        if (closedIt) {
+          const { channel } = current;
+          if (channel.type === "dineIn" && activeOrderAt(channel.tableId, activeOrders(s.orders, s.lines, s.payments))) {
+            return nothing(undefined);
+          }
+          changes.push(put({ table: "orders", record: { ...current, state: before.state } }));
+        }
+        return { changes, result: undefined };
       });
 
   function editLine<T>(
@@ -164,7 +197,7 @@ export function createOrderDesk(repository: OrderRepository, ids: IdGenerator, c
       run<Result<Undo, "occupied">>(`removeTable:${id}`, (s) => {
         const table = s.tables.find((t) => t.id === id);
         if (!table) return nothing(ok(() => Promise.resolve()));
-        if (activeOrderAt(id, activeOrders(s.orders, s.lines))) return nothing(err("occupied"));
+        if (activeOrderAt(id, activeOrders(s.orders, s.lines, s.payments))) return nothing(err("occupied"));
         const changes = [remove({ table: "tables", record: table })];
         return { changes, result: ok(undoOf(changes)) };
       }),
@@ -186,7 +219,12 @@ export function createOrderDesk(repository: OrderRepository, ids: IdGenerator, c
         }
         // Another tab may have opened this table since the screen did.
         if (!target && order.channel.type === "dineIn") {
-          target = activeOrderAt(order.channel.tableId, activeOrders(s.orders, s.lines))?.order;
+          target = activeOrderAt(order.channel.tableId, activeOrders(s.orders, s.lines, s.payments))?.order;
+        }
+        // One more dish after the bill: the bill no longer stands.
+        if (target?.state.status === "billed") {
+          target = reopenForDishes(target);
+          changes.push(put({ table: "orders", record: target }));
         }
         if (!target) {
           // The token is taken now, against every order this device knows of
@@ -266,7 +304,7 @@ export function createOrderDesk(repository: OrderRepository, ids: IdGenerator, c
         if (!order || order.state.status !== "open" || order.channel.type !== "dineIn" || order.channel.tableId === tableId) {
           return nothing(ok(undefined));
         }
-        if (activeOrderAt(tableId, activeOrders(s.orders, s.lines))) return nothing(err("occupied"));
+        if (activeOrderAt(tableId, activeOrders(s.orders, s.lines, s.payments))) return nothing(err("occupied"));
         const record: Order = { ...order, channel: { type: "dineIn", tableId } };
         return { changes: [put({ table: "orders", record })], result: ok(undefined) };
       }),
@@ -281,26 +319,48 @@ export function createOrderDesk(repository: OrderRepository, ids: IdGenerator, c
         return { changes: [(out ? put : remove)({ table: "outOfStock", record })], result: undefined };
       }),
 
-    settle: (orderId, payments, discount) =>
-      // Keyed: a double tap on Cash settles once and both taps see the same answer.
-      run<Result<Undo, SettleError>>(`settle:${orderId}`, (s) => {
+    presentBill: (orderId) =>
+      run<Result<void, BillError>>(`presentBill:${orderId}`, (s) => {
         const order = orderIn(s, orderId);
         if (!order) return nothing(err("empty"));
-        // Planned against the stored lines, not the screen's: a dish added on
-        // another tab since makes the payments fall short, and the sheet says so.
-        const at = clock.now();
-        const settled = settleOrder(order, s.lines, payments, discount, at);
-        if (!settled.ok) return nothing(settled);
-        return { changes: [put({ table: "orders", record: settled.value })], result: ok(reopen(orderId, at)) };
+        const billed = presentBill(order, s.lines, clock.now());
+        if (!billed.ok) return nothing(billed);
+        if (billed.value === order) return nothing(ok(undefined));
+        return { changes: [put({ table: "orders", record: billed.value })], result: ok(undefined) };
       }),
 
-    correctPayments: (orderId, payments) =>
-      run<Result<void, CorrectionError>>(`correctPayments:${orderId}`, (s) => {
+    receive: (orderId, tender, amount, discount) =>
+      // Keyed: a double tap on Settle records one payment. Planned against the
+      // stored dishes and payments, not the screen's: a dish or a payment
+      // added on another tab since makes it refuse rather than charge wrongly.
+      run<Result<{ settled: boolean; undo: Undo }, PaymentError | "missing">>(`receive:${orderId}`, (s) => {
         const order = orderIn(s, orderId);
-        if (!order) return nothing(err("notSettled"));
-        const corrected = correctPayments(order, payments, clock.now());
+        if (!order) return nothing(err("missing"));
+        const received = receivePayment(order, s.lines, s.payments, discount, tender, amount, ids.newId() as PaymentId, clock.now());
+        if (!received.ok) return nothing(received);
+        const { payment, order: after } = received.value;
+        return {
+          changes: [put({ table: "orders", record: after }), put({ table: "payments", record: payment })],
+          result: ok({ settled: after.state.status === "settled", undo: takeBack(order, after, payment) }),
+        };
+      }),
+
+    closeBill: (orderId, discount) =>
+      run<Result<Undo, CloseError>>(`closeBill:${orderId}`, (s) => {
+        const order = orderIn(s, orderId);
+        if (!order) return nothing(err("missing"));
+        const closed = closeBill(order, s.lines, s.payments, discount, clock.now());
+        if (!closed.ok) return nothing(closed);
+        return { changes: [put({ table: "orders", record: closed.value })], result: ok(takeBack(order, closed.value, null)) };
+      }),
+
+    correctPayment: (paymentId, method) =>
+      run<Result<void, "unchanged" | "missing">>(`correctPayment:${paymentId}`, (s) => {
+        const payment = s.payments.find((p) => p.id === paymentId);
+        if (!payment) return nothing(err("missing"));
+        const corrected = correctPayment(payment, method, clock.now());
         if (!corrected.ok) return nothing(corrected);
-        return { changes: [put({ table: "orders", record: corrected.value })], result: ok(undefined) };
+        return { changes: [put({ table: "payments", record: corrected.value })], result: ok(undefined) };
       }),
   };
 

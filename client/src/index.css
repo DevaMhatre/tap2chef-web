@@ -64,3 +64,9 @@ body {
 @keyframes pop {
   from { transform: scale(0.6); opacity: 0.4; }
 }
+
+/* The bill is settled: a check that springs in once, then rests. */
+@keyframes settle-in {
+  0% { transform: scale(0.4); opacity: 0; }
+  60% { transform: scale(1.08); opacity: 1; }
+}
