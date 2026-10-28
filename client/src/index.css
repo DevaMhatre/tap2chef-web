@@ -59,3 +59,8 @@ body {
     transition-duration: 1ms !important;
   }
 }
+
+/* A count that just changed: a small, quick bounce. */
+@keyframes pop {
+  from { transform: scale(0.6); opacity: 0.4; }
+}

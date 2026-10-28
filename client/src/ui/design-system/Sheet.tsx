@@ -35,20 +35,29 @@ type Props = {
 // from the browser. Slides up from the bottom on phones; centred on wider screens.
 export function Sheet({ open, onClose, title, action, dismissLabel = "Cancel", children }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
+  // Closed by the parent (e.g. one sheet handing over to another): the
+  // dialog's close event must not report it as the person dismissing it.
+  const closedByProp = useRef(false);
   const keyboard = useKeyboardInset(open);
 
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
     if (open && !dialog.open) dialog.showModal();
-    if (!open && dialog.open) dialog.close();
+    if (!open && dialog.open) {
+      closedByProp.current = true;
+      dialog.close();
+    }
   }, [open]);
 
   return (
     <dialog
       ref={ref}
       aria-label={title}
-      onClose={onClose}
+      onClose={() => {
+        if (closedByProp.current) closedByProp.current = false;
+        else onClose();
+      }}
       // A tap on the dimmed backdrop lands on the dialog element itself.
       onClick={(event) => event.target === event.currentTarget && onClose()}
       style={keyboard > 0 ? { marginBottom: keyboard, maxHeight: `calc(100dvh - ${keyboard}px - 1rem)` } : undefined}

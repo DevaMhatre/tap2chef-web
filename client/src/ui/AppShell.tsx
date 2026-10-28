@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from "react-router";
+import { NavLink, Outlet, useMatch } from "react-router";
 import type { IconType } from "react-icons";
 import {
   MdTableRestaurant,
@@ -41,6 +41,12 @@ function SavedBadge() {
 }
 
 export default function AppShell() {
+  // An open order is a pushed screen: it brings its own bar, and on a phone
+  // its cart takes the tab bar's place under the thumb.
+  const atTable = useMatch("/tables/:tableId");
+  const atOrder = useMatch("/orders/:orderId");
+  const pushed = Boolean(atTable || atOrder);
+
   return (
     <div className="min-h-dvh bg-bg text-ink md:flex">
       {/* Sidebar: tablet and desktop */}
@@ -55,7 +61,7 @@ export default function AppShell() {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-surface/95 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur">
+        <header data-pushed={pushed} className="sticky top-0 z-10 flex data-[pushed=true]:hidden items-center justify-between border-b border-line bg-surface/95 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur">
           <span className="text-lg font-extrabold tracking-tight md:invisible">Tap2Chef</span>
           <SavedBadge />
         </header>
@@ -67,7 +73,7 @@ export default function AppShell() {
       </div>
 
       {/* Bottom tab bar: phones */}
-      <nav className="fixed inset-x-0 bottom-0 z-10 flex border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] md:hidden">
+      <nav data-pushed={pushed} className="fixed inset-x-0 bottom-0 z-10 flex data-[pushed=true]:hidden border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] md:hidden">
         {NAV.map(({ to, label, icon: Icon }) => (
           <NavLink key={to} to={to} className={tabClass}>
             <Icon className="text-2xl" />

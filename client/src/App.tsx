@@ -10,6 +10,9 @@ import AppShell from "./ui/AppShell";
 import { UndoToastProvider } from "./ui/design-system/UndoToast";
 import ComingSoon from "./ui/pages/ComingSoon";
 import MenuPage from "./ui/pages/MenuPage";
+import OrderPage from "./ui/pages/OrderPage";
+import OrdersPage from "./ui/pages/OrdersPage";
+import TablesPage from "./ui/pages/TablesPage";
 import Today from "./ui/pages/Today";
 
 // Composition root: the only place that knows which infrastructure backs
@@ -31,14 +34,10 @@ export default function App() {
           <Routes>
             <Route element={<AppShell />}>
               <Route index element={<Navigate to="/tables" replace />} />
-              <Route
-                path="tables"
-                element={<ComingSoon title="Tables">Dine-in table grid comes next.</ComingSoon>}
-              />
-              <Route
-                path="orders"
-                element={<ComingSoon title="Orders">Kitchen queue: cooking → served → settled.</ComingSoon>}
-              />
+              <Route path="tables" element={<TablesPage />} />
+              <Route path="tables/:tableId" element={<OrderPage />} />
+              <Route path="orders" element={<OrdersPage />} />
+              <Route path="orders/:orderId" element={<OrderPage />} />
               <Route path="menu" element={<MenuPage />} />
               <Route
                 path="expenses"
