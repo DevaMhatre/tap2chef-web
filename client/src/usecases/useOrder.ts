@@ -24,7 +24,7 @@ import {
 import { sortByOrder } from "../domain/ordering";
 import type { Paise } from "../domain/money";
 import { err, type Result } from "../domain/result";
-import { amountPaid, fullPayment, quoteBill, type BillInput, type BillQuote } from "../domain/settlement";
+import { amountPaid, paymentsFor, quoteBill, type BillInput, type BillQuote, type PayBy } from "../domain/settlement";
 import type { DiningTable, TableId } from "../domain/tables";
 import type { OrderCommands, Undo } from "./orderDesk";
 import { usePorts } from "./PortsProvider";
@@ -35,8 +35,7 @@ export type OrderTarget = { kind: "table"; tableId: TableId } | { kind: "takeawa
 
 export type DishRow = OrderableItem & { out: boolean; inCart: number };
 
-/** How the guest pays: all cash, all UPI, or cash typed and UPI the rest. */
-export type PayBy = "cash" | "upi" | "split";
+export type { PayBy };
 
 export type OrderScreen =
   | { state: "loading" }
@@ -164,7 +163,7 @@ export function useOrder(target: OrderTarget): OrderScreen {
       // desk refuses rather than charge for something staff didn't see.
       const q = quote(input);
       if (!q.discount.ok) return Promise.resolve(err("invalid"));
-      const payments = by === "split" ? (q.split.ok ? q.split.value : undefined) : fullPayment(by, q.due);
+      const payments = paymentsFor(by, q);
       if (!payments) return Promise.resolve(err("invalid"));
       return commands.settle(order.id, payments, q.discount.value);
     },
