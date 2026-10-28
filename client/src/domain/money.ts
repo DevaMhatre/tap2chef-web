@@ -20,3 +20,20 @@ export function addPaise(...amounts: Paise[]): Paise {
 export function multiplyPaise(amount: Paise, quantity: number): Paise {
   return paise(amount * quantity);
 }
+
+// What an owner types into a price field: "120", "120.5", "₹1,200". Strict on
+// purpose: "12.505" or "12abc" is a typo to show, not something to round away.
+export function parseRupees(text: string): Paise | undefined {
+  const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(text.replace(/[₹,\s]/g, ""));
+  if (!match) return undefined;
+
+  const amount = Number(match[1]) * 100 + Number((match[2] ?? "").padEnd(2, "0"));
+  return Number.isSafeInteger(amount) ? paise(amount) : undefined;
+}
+
+// The inverse, for pre-filling an edit field: 12050 → "120.50", 12000 → "120".
+export function toRupeeText(amount: Paise): string {
+  const whole = Math.floor(amount / 100);
+  const fraction = amount % 100;
+  return fraction === 0 ? `${whole}` : `${whole}.${String(fraction).padStart(2, "0")}`;
+}
