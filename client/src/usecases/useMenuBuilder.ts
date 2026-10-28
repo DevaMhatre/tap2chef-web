@@ -15,6 +15,8 @@ export type MenuBuilder =
       "createMenu"
     >);
 
+export type ReadyMenuBuilder = Extract<MenuBuilder, { state: "ready" }>;
+
 export function useMenuBuilder(): MenuBuilder {
   const { menu, ids } = usePorts();
   const editor = useMemo(() => createMenuEditor(menu, ids), [menu, ids]);

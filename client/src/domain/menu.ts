@@ -1,4 +1,4 @@
-import { paise, parseRupees, type Paise } from "./money";
+import { paise, parseRupees, toRupeeText, type Paise } from "./money";
 import { sortByOrder } from "./ordering";
 import { err, ok, type Result } from "./result";
 
@@ -116,6 +116,23 @@ export function validateItemDraft(draft: ItemDraft): Result<ItemFields, ItemDraf
     return err(errors);
   }
   return ok({ name: name.value, categoryId: draft.categoryId, diet: draft.diet, prices });
+}
+
+/** The edit form for an existing item: prices back to rupee text. */
+export function itemToDraft(item: MenuItem): ItemDraft {
+  return {
+    name: item.name,
+    categoryId: item.categoryId,
+    diet: item.diet,
+    prices: Object.fromEntries(
+      Object.entries(item.prices).flatMap(([id, pricing]) => (pricing ? [[id, toRupeeText(pricing.price)]] : [])),
+    ),
+  };
+}
+
+/** Quick add has one price field; it applies to every profile the draft offers. */
+export function withPriceEverywhere(draft: ItemDraft, text: string): ItemDraft {
+  return { ...draft, prices: Object.fromEntries(Object.keys(draft.prices).map((id) => [id, text])) };
 }
 
 // ---------------------------------------------------------------- shop overrides

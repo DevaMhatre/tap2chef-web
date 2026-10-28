@@ -11,6 +11,11 @@
   --color-primary: #e63946;
   --color-success: #2a9d8f;
   --color-warning: #d97706;
+  /* Indian food marks: green dot = veg, brown triangle = non-veg */
+  --color-veg: #15803d;
+  --color-nonveg: #8b3a1a;
+  --color-egg: #ca8a04;
+  --color-scrim: rgb(0 0 0 / 0.35);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -21,6 +26,10 @@
     --color-ink: #e8eef4;
     --color-muted: #94a3b8;
     --color-line: #263442;
+    --color-veg: #4ade80;
+    --color-nonveg: #e0805a;
+    --color-egg: #facc15;
+    --color-scrim: rgb(0 0 0 / 0.6);
   }
 }
 
@@ -28,4 +37,21 @@ html,
 body {
   background: var(--color-bg);
   -webkit-tap-highlight-color: transparent;
+}
+
+/* Sheets: slide up on phones, fade in on larger screens. */
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+}
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(0.75rem); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, ::backdrop {
+    animation-duration: 1ms !important;
+    transition-duration: 1ms !important;
+  }
 }

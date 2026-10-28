@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   groupByCategory,
   isDuplicateName,
+  itemToDraft,
   menuFor,
   resolvePrice,
   validateItemDraft,
   validateName,
   validatePrice,
+  withPriceEverywhere,
   type Category,
   type CategoryId,
   type ItemDraft,
@@ -120,6 +122,27 @@ describe("validateItemDraft", () => {
       ok: false,
       error: { profiles: "noneSelected" },
     });
+  });
+});
+
+describe("itemToDraft", () => {
+  it("round-trips through validation unchanged", () => {
+    const tikka = item("tikka", { prices: { [dineIn]: { kind: "fixed", price: paise(22050) } } });
+    expect(itemToDraft(tikka).prices).toEqual({ [dineIn]: "220.50" });
+    expect(validateItemDraft(itemToDraft(tikka))).toEqual({
+      ok: true,
+      value: { name: tikka.name, categoryId: tikka.categoryId, diet: tikka.diet, prices: tikka.prices },
+    });
+  });
+});
+
+describe("withPriceEverywhere", () => {
+  it("fills every offered profile and only those", () => {
+    expect(withPriceEverywhere(draft({ prices: { [dineIn]: "", [takeaway]: "9" } }), "40").prices).toEqual({
+      [dineIn]: "40",
+      [takeaway]: "40",
+    });
+    expect(withPriceEverywhere(draft({ prices: { [dineIn]: "" } }), "40").prices).toEqual({ [dineIn]: "40" });
   });
 });
 

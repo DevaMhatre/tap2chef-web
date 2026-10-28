@@ -116,6 +116,19 @@ describe("newItem", () => {
   });
 });
 
+describe("addProfile", () => {
+  it("starts a new price list as a copy of the first", async () => {
+    const { fake, menu } = await setup({ profiles: [dineIn], categories: [starters] });
+    await menu.saveItem(menu.newItem().id, draft("Samosa", { prices: { [dineIn.id]: "40" } }));
+    const result = await menu.addProfile("Takeaway");
+
+    expect(result.ok).toBe(true);
+    const parcel = result.ok ? result.value.id : ("" as ProfileId);
+    expect(fake.current().items[0]!.prices[parcel]).toEqual({ kind: "fixed", price: 4000 });
+    expect(sortByOrder(fake.current().profiles).map((p) => p.name)).toEqual(["Dine-In", "Takeaway"]);
+  });
+});
+
 describe("removing", () => {
   it("removes a category with its items, and undo brings both back", async () => {
     const { fake, menu } = await setup();

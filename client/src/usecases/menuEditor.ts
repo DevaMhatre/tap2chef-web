@@ -223,7 +223,25 @@ export function createMenuEditor(repository: MenuRepository, ids: IdGenerator): 
         return { changes, result: undoOf(changes) };
       }),
 
-    addProfile: profiles.add,
+    addProfile(name) {
+      const valid = validateName(name, NAME_MAX.profile);
+      if (!valid.ok) return Promise.resolve(err(valid.error));
+      return run<Result<MenuProfile, NameError>>(`add:profiles:${valid.value}`, (menu) => {
+        const record: MenuProfile = { id: ids.newId() as ProfileId, name: valid.value, sortKey: "" };
+        const changes = placed("profiles", menu.profiles, record, Infinity);
+
+        // A new price list starts as a copy of the first one, so adding
+        // Takeaway to an 80-dish menu means editing only the dishes that differ.
+        const source = sortByOrder(menu.profiles)[0];
+        for (const item of source ? menu.items : []) {
+          const pricing = item.prices[source!.id];
+          if (pricing) {
+            changes.push({ op: "put", table: "items", record: { ...item, prices: { ...item.prices, [record.id]: pricing } } });
+          }
+        }
+        return { changes, result: ok(savedRecord<MenuProfile>(changes, record.id)) };
+      });
+    },
     renameProfile: profiles.rename,
     moveProfile: profiles.move,
 
