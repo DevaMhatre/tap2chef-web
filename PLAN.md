@@ -168,6 +168,10 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 - A corrected bill says "corrected" in the list and when, in the sheet (2026-10-29).
 - No change chips (cashiers count change in their heads): staff type the cash received and the change shows; UPI is exact (2026-10-29).
 
+### Hosting
+- Tap2Chef is a static PWA served by nginx at `tap2chef.devamhatre.com` on the owner's VPS, with its own Let's Encrypt certificate; the built app is published as the `site` branch and pulled by the server — no build tools or keys on the server, no server keys on the (company) dev laptop (2026-10-29).
+- The owner's sites moved from devamhatre.cloud (expires 2026-11-11) to devamhatre.com, each with its own certificate (never one shared with .cloud, whose renewal will fail after expiry); .cloud 301-redirects until then. POS waits for its DNS record, then the move script is rerun (2026-10-29).
+
 ### Design
 - Crowding: history is a summary row you tap into (Wallet, Settings); collapsible sections only where the owner edits (Menu tab), never on the order screen, where every dish must be one tap away (2026-10-29).
 - Sheet actions: a **filled** pill commits (Save, Add), a **tinted** pill closes (Done), plain text leaves (Cancel) — never two filled buttons competing (2026-10-29).
@@ -199,6 +203,8 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 - Owner test: 10 real dishes, unaided — where do they hesitate?
 
 **Known gaps**
+- The VPS exposes the POS API (port 8000) and a Docker container (port 4000) directly to the internet, bypassing nginx and HTTPS — close with a firewall (owner's server, not this repo).
+- After 2026-11-11: remove the .cloud server blocks and `certbot delete --cert-name devamhatre.cloud` / `pos.devamhatre.cloud`, or renewals will warn by email.
 - `useSyncStatus` / `useDeviceStorage` import `dexie-react-hooks` in the use-case layer — move behind subscribe-style ports.
 - Two devices opening the same table offline make two orders; the earliest is shown, the other is hidden until a merge exists (needs sync first).
 - A bill opened yesterday and settled today drops out of view (the device loads today's orders and open ones only); it counts as yesterday's, but nothing shows yesterday yet — step 7.

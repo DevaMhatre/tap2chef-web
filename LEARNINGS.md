@@ -146,7 +146,17 @@ wrong and how we now avoid it**.
   which hid a wrong amount.
 - *Apply:* if a fixture's setup fails, throw. Never fall back to a default.
 
-**3. Tooling traps**
+**3. Never run an untested script on a live server** (2026-10-29)
+- *What happened:* The deploy script for the VPS (moving the sites to .com)
+  would have dropped the portfolio's `server_name`, because certbot tags that
+  line too. In bash, `a && b` also doesn't stop on a failed `a` under
+  `set -e`. A local dry run against a reconstructed config caught both.
+- *Apply:* read the live config first (read-only commands), dry-run every
+  server script locally against a copy, back up before changing anything,
+  restore automatically on failure, and make scripts safe to rerun. One
+  command per line in `set -Eeuo pipefail` scripts.
+
+**4. Tooling traps**
 - The shell defaults to Node 20; the project needs Node 22 (`nvm use`), or
   the jsdom tests won't start.
 - zsh doesn't split `$var` into words: use `${=args}` in loops that pass
