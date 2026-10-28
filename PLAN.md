@@ -71,7 +71,13 @@ A feature is marked `[x]` only when **all** of these hold:
 - [ ] Owner test: the restaurant runs one real lunch on it
 
 ### 6. Bill settlement — **next** (a table frees only when its bill settles)
-- [ ] Cash / UPI split; settles only when payments sum exactly to the total
+Brainstormed 2026-10-29 against Toast, Square and Petpooja. The discount is in; 6d waits for the owner test.
+- [ ] 6a Domain: `settled` arm on the order state (payments + optional adjustment), exact-sum rule, payment-method correction — built, uncommitted (`settlement.ts`, `settle` / `correctPayments` in `order.ts`)
+- [ ] 6b Bill sheet: primary button is Send while anything is unsent, then Settle; one-tap Cash / UPI for the full amount; Split = type cash, UPI fills the rest (sum is exact by construction); cash change chips (₹900 · ₹1000 · ₹2000 → "Change ₹110"); adjust by typing the final amount ("make it ₹850"), recorded as a discount with optional reason, only downward
+- [ ] 6c Orders tab: "Settled today" with the day's total; a settled bill never reopens (undo within 5 s only), but its payment method can be corrected
+- [ ] 6d UPI QR with the exact amount, drawn on the device from the owner's UPI ID, offline, no gateway; staff tap "Received". **After the owner test.**
+
+Said no to: split by seat / by item / evenly (several payments per bill covers it), promotions engine, reopening a settled bill.
 
 ### 7. Expenses and the day's dashboard
 - [ ] Daily expenses (cash / UPI)
@@ -133,6 +139,15 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 - Open orders from an earlier business day are listed first under "Still open from yesterday" — never silently lost (2026-10-29).
 - Phones and tablets in portrait: the order is a bar under the thumb with Send on it; from 1024px the ticket sits beside the menu (2026-10-29).
 
+### Bills
+- A discount is typed as the final amount ("make it ₹850"), only downward, reason optional; no percentages, coupons or promotions engine. It covers rounding off and a regular's discount (2026-10-29).
+- The on-device UPI QR (6d) waits for the owner test. If they already have a payment speaker and a printed QR, it adds little (2026-10-29).
+
+- A settled bill keeps its `subtotal` snapshot; the day's numbers read payments, never re-add lines (2026-10-29).
+- Settle refuses while a dish is unsent; staff Send or remove it first, never an automatic choice (2026-10-29).
+- A payment correction changes the method, never the amount, and stamps `correctedAt` so a cash bill turned UPI stays visible to the owner (2026-10-29).
+- Change chips: next ₹50 (bills under ₹1000), ₹100, ₹500, ₹1000, ₹2000 above the amount due, first three (2026-10-29).
+
 ### Design
 - Sheet actions: a **filled** pill commits (Save, Add), a **tinted** pill closes (Done), plain text leaves (Cancel) — never two filled buttons competing (2026-10-29).
 - Forgiveness over confirmation: destructive actions act at once with Undo (2026-10-29).
@@ -145,6 +160,9 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 ## Open questions
 
 **For the restaurant owner**
+- Do you charge GST on the bill; are you GST-registered? → tax lines and sequential bill numbers (two offline devices could collide on them).
+- How do customers pay UPI today: printed QR, payment speaker, or your own phone? → decides 6d.
+- How often do you discount or round off a bill, and who decides?
 - How does an order reach the kitchen today (shouted, paper KOT, the waiter walks in)? → decides what Send produces before printing (step 9).
 - Do you change or cancel something after the kitchen has it? How often, and who decides?
 - Do customers move tables, or split one table's bill?
@@ -159,6 +177,7 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 **Known gaps**
 - `useSyncStatus` / `useDeviceStorage` import `dexie-react-hooks` in the use-case layer — move behind subscribe-style ports.
 - Two devices opening the same table offline make two orders; the earliest is shown, the other is hidden until a merge exists (needs sync first).
+- 6b must: refuse line edits, voids and moves on a settled order; have `addDish` start a new order when its target settled on another tab; read and write the `settled` arm in the Dexie adapter (today it drops non-open orders).
 - Send has no kitchen output yet: no KOT print or kitchen screen until step 9 / sync.
 - The shell defaults to Node 20; the project needs Node 22 (`nvm use`), or the jsdom tests fail to start.
 
@@ -168,3 +187,4 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 
 - **2026-10-29** — Steps 1–3 scaffolded. Step 4 menu builder brainstormed (prototype studied, SaaS research), built in four layers, verified in Chrome at four sizes, phone-tested once and polished. North Star, Product Test and this plan established.
 - **2026-10-29** — Step 5 brainstormed against Toast / Square / Petpooja / Lightspeed, built in four layers (5a–5e), checked in Chrome at 360 / 820 / 1180 / 1440 in light and dark, and offline. Fixed on the way: one sheet handing over to another closed both.
+- **2026-10-29** — Step 5 committed on branch `step-5-orders` (5 commits, each typechecks and passes tests). Step 6 brainstormed; proposal and two open choices recorded above.
