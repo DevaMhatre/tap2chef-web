@@ -72,8 +72,8 @@ A feature is marked `[x]` only when **all** of these hold:
 
 ### 6. Bill settlement — **next** (a table frees only when its bill settles)
 Brainstormed 2026-10-29 against Toast, Square and Petpooja. The discount is in; 6d waits for the owner test.
-- [ ] 6a Domain: `settled` arm on the order state (payments + optional adjustment), exact-sum rule, payment-method correction — built, uncommitted (`settlement.ts`, `settle` / `correctPayments` in `order.ts`)
-- [ ] 6b Bill sheet: primary button is Send while anything is unsent, then Settle; one-tap Cash / UPI for the full amount; Split = type cash, UPI fills the rest (sum is exact by construction); cash change chips (₹900 · ₹1000 · ₹2000 → "Change ₹110"); adjust by typing the final amount ("make it ₹850"), recorded as a discount with optional reason, only downward
+- [x] 6a Domain: `settled` arm on the order state (payments + optional adjustment), exact-sum rule, payment-method correction — `cf54125`
+- [x] 6b Bill sheet: primary button is Send while anything is unsent, then Settle; one-tap Cash / UPI for the full amount; Split = type cash, UPI fills the rest (sum is exact by construction); cash change chips (₹900 · ₹1000 · ₹2000 → "Change ₹110"); adjust by typing the final amount ("make it ₹850"), recorded as a discount with optional reason, only downward — `6c6422f`, `0b344ad`, `abfa74c`
 - [ ] 6c Orders tab: "Settled today" with the day's total; a settled bill never reopens (undo within 5 s only), but its payment method can be corrected
 - [ ] 6d UPI QR with the exact amount, drawn on the device from the owner's UPI ID, offline, no gateway; staff tap "Received". **After the owner test.**
 
@@ -146,6 +146,10 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 - A settled bill keeps its `subtotal` snapshot; the day's numbers read payments, never re-add lines (2026-10-29).
 - Settle refuses while a dish is unsent; staff Send or remove it first, never an automatic choice (2026-10-29).
 - A payment correction changes the method, never the amount, and stamps `correctedAt` so a cash bill turned UPI stays visible to the owner (2026-10-29).
+- The bill sheet's commits are two equal tiles, Cash and UPI, each one tap; split and discount are plain links that open in place. "Round off or discount", never "Change amount": "change" already means the cash handed back (2026-10-29).
+- A settle is checked against the stored dishes, not the screen's: if another tab changed the bill, it refuses and says so rather than charging for what staff didn't see (2026-10-29).
+- Undoing a settle does nothing once the table has a new order or the payment was corrected (2026-10-29).
+- A paid takeaway's link shows "Token N is paid"; a dish tapped onto a table settled elsewhere starts the table's next order (2026-10-29).
 - Change chips: next ₹50 (bills under ₹1000), ₹100, ₹500, ₹1000, ₹2000 above the amount due, first three (2026-10-29).
 
 ### Design
@@ -177,7 +181,6 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 **Known gaps**
 - `useSyncStatus` / `useDeviceStorage` import `dexie-react-hooks` in the use-case layer — move behind subscribe-style ports.
 - Two devices opening the same table offline make two orders; the earliest is shown, the other is hidden until a merge exists (needs sync first).
-- 6b must: refuse line edits, voids and moves on a settled order; have `addDish` start a new order when its target settled on another tab; read and write the `settled` arm in the Dexie adapter (today it drops non-open orders).
 - Send has no kitchen output yet: no KOT print or kitchen screen until step 9 / sync.
 - The shell defaults to Node 20; the project needs Node 22 (`nvm use`), or the jsdom tests fail to start.
 
@@ -188,3 +191,4 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 - **2026-10-29** — Steps 1–3 scaffolded. Step 4 menu builder brainstormed (prototype studied, SaaS research), built in four layers, verified in Chrome at four sizes, phone-tested once and polished. North Star, Product Test and this plan established.
 - **2026-10-29** — Step 5 brainstormed against Toast / Square / Petpooja / Lightspeed, built in four layers (5a–5e), checked in Chrome at 360 / 820 / 1180 / 1440 in light and dark, and offline. Fixed on the way: one sheet handing over to another closed both.
 - **2026-10-29** — Step 5 committed on branch `step-5-orders` (5 commits, each typechecks and passes tests). Step 6 brainstormed; proposal and two open choices recorded above.
+- **2026-10-29** — 6a committed (`cf54125`). 6b built in four layers, checked in Chrome at 360 / 820 / 1440 in light and dark and offline; double-tap settles once, undo reopens.
