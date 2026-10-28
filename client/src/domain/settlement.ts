@@ -63,6 +63,24 @@ export function splitPayment(due: Paise, cash: Paise): Result<Payment[], "moreTh
   return ok([...fullPayment("cash", cash), ...fullPayment("upi", paise(due - cash))]);
 }
 
+/** How the guest pays: all cash, all UPI, or cash typed and UPI the rest. */
+export type PayBy = PaymentMethod | "split";
+
+/** The payments a quote makes for `by`; nothing while what was typed doesn't add up. */
+export function paymentsFor(by: PayBy, quote: BillQuote): Payment[] | undefined {
+  if (by !== "split") return fullPayment(by, quote.due);
+  return quote.split.ok ? quote.split.value : undefined;
+}
+
+/** The day's money by drawer: what the cash box should hold, what came by UPI. */
+export type Takings = { total: Paise; cash: Paise; upi: Paise };
+
+export function takings(bills: readonly Bill[]): Takings {
+  const payments = bills.flatMap((b) => b.payments);
+  const by = (method: PaymentMethod) => amountPaid(payments.filter((p) => p.method === method));
+  return { total: amountPaid(payments), cash: by("cash"), upi: by("upi") };
+}
+
 // ---------------------------------------------------------------- change
 
 const RUPEE = 100;

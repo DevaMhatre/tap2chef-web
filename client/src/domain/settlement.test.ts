@@ -7,6 +7,7 @@ import {
   fullPayment,
   quoteBill,
   splitPayment,
+  takings,
   tenderOptions,
   validateBill,
   type Payment,
@@ -146,5 +147,17 @@ describe("quoteBill", () => {
 
   it("has no change when the note is too small", () => {
     expect(quoteBill(rupees(890), { ...empty, given: rupees(500) }).change).toBeUndefined();
+  });
+});
+
+describe("takings", () => {
+  it("adds the day's payments by drawer", () => {
+    const bills = [
+      { subtotal: rupees(890), payments: [cash(500), upi(390)] },
+      { subtotal: rupees(300), discount: { amount: rupees(20), reason: "" }, payments: [cash(280)] },
+      { subtotal: paise(0), payments: [] },
+    ];
+    expect(takings(bills)).toEqual({ total: rupees(1170), cash: rupees(780), upi: rupees(390) });
+    expect(takings([])).toEqual({ total: 0, cash: 0, upi: 0 });
   });
 });

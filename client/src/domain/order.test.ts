@@ -16,6 +16,7 @@ import {
   outOn,
   sendDraft,
   settle,
+  settledOn,
   ticketOf,
   voidSent,
   withNote,
@@ -192,6 +193,20 @@ describe("settle", () => {
   it("settles a bill of ₹0 dishes with no payment", () => {
     const water = sent(draftLine("w", dish("Water", 0)), "r1", 1);
     expect(settle(order("o1"), [water], [], undefined, 50).ok).toBe(true);
+  });
+});
+
+describe("settledOn", () => {
+  const paid = (id: string, at: number, day = DAY) => {
+    const lines = [sent(draftLine(`${id}-l`, roti, 1, id), "r", 1)];
+    const result = settle(order(id, { businessDate: day }), lines, [{ method: "cash", amount: paise(2000) }], undefined, at);
+    if (!result.ok) throw new Error(result.error);
+    return result.value;
+  };
+
+  it("lists the day's paid bills, latest first, and nothing open or from another day", () => {
+    const orders = [paid("a", 10), paid("b", 30), order("open"), paid("old", 20, "2026-10-28" as BusinessDate)];
+    expect(settledOn(orders, DAY).map((o) => o.id)).toEqual(["b", "a"]);
   });
 });
 

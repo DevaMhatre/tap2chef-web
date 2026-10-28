@@ -215,6 +215,19 @@ export function correctPayments(order: Order, payments: Payment[], at: number): 
   return ok({ ...order, state: { ...order.state, bill: corrected.value, correctedAt: at } });
 }
 
+export type SettledOrder = Order & { state: Extract<OrderState, { status: "settled" }> };
+
+/**
+ * The day's paid bills, latest first. A bill counts on its order's trading
+ * day, like its token: one left open overnight and paid next morning
+ * belongs to the evening it was served.
+ */
+export function settledOn(orders: readonly Order[], day: BusinessDate): SettledOrder[] {
+  return orders
+    .filter((o): o is SettledOrder => o.state.status === "settled" && o.businessDate === day)
+    .sort((a, b) => b.state.settledAt - a.state.settledAt || (a.id < b.id ? 1 : -1));
+}
+
 // ---------------------------------------------------------------- the ticket
 
 export type Round = { id: RoundId; number: number; sentAt: number; lines: OrderLine[] };
