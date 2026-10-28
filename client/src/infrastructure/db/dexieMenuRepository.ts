@@ -2,7 +2,8 @@ import { liveQuery } from "dexie";
 import type { Category, CategoryId, Diet, ItemId, MenuItem, MenuProfile, Pricing, ProfileId } from "../../domain/menu";
 import type { MenuChange, MenuRecord, MenuRepository, MenuSnapshot } from "../../usecases/ports";
 import { db, type StoredRecord, type SyncedTable } from "./db";
-import { getTenantId, save } from "./repo";
+import { isPaise, isText, readAll } from "./parse";
+import { writeAll } from "./repo";
 
 // Anti-corruption layer between stored records and the menu domain. Records
 // can arrive from other devices through sync, so they are checked on read and
@@ -16,8 +17,6 @@ const TABLES: Record<MenuRecord["table"], SyncedTable> = {
 
 const DIETS: readonly string[] = ["veg", "nonVeg", "egg"] satisfies Diet[];
 
-const isText = (value: unknown): value is string => typeof value === "string" && value !== "";
-const isPaise = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) >= 0;
 
 function toProfile(r: StoredRecord): MenuProfile | undefined {
   if (!isText(r.name) || !isText(r.sortKey)) return undefined;
@@ -56,15 +55,6 @@ function toItem(r: StoredRecord): MenuItem | undefined {
   };
 }
 
-function readAll<T>(rows: StoredRecord[], parse: (r: StoredRecord) => T | undefined, table: string): T[] {
-  return rows.flatMap((row) => {
-    if (row.deleted) return [];
-    const parsed = parse(row);
-    if (!parsed) console.warn(`Skipping malformed ${table} record`, row.id);
-    return parsed ? [parsed] : [];
-  });
-}
-
 async function readMenu(): Promise<MenuSnapshot> {
   const [profiles, categories, items] = await Promise.all([
     db.menuProfiles.toArray(),
@@ -90,23 +80,6 @@ export const dexieMenuRepository: MenuRepository = {
     return () => subscription.unsubscribe();
   },
 
-  async write(changes: readonly MenuChange[]) {
-    // Read outside the transaction: `meta` is not one of its tables.
-    const tenantId = await getTenantId();
-    const tables = [...new Set(changes.map((c) => db[TABLES[c.table]]))];
-
-    await db.transaction("rw", [...tables, db.outbox], async () => {
-      for (const change of changes) {
-        const table = TABLES[change.table];
-        // Merge over the stored row so sync metadata (createdAt) survives edits.
-        const existing = await db[table].get(change.record.id);
-        await save(table, {
-          ...existing,
-          ...change.record,
-          tenantId,
-          deleted: change.op === "remove",
-        });
-      }
-    });
-  },
+  write: (changes: readonly MenuChange[]) =>
+    writeAll(changes.map((c) => ({ table: TABLES[c.table], record: c.record, op: c.op }))),
 };

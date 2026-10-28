@@ -1,5 +1,5 @@
 // In-memory ports for use-case tests. Not imported by the app.
-import { applyChanges } from "./menuChanges";
+import { applyChanges } from "./applyChanges";
 import type { IdGenerator, MenuChange, MenuRepository, MenuSnapshot } from "./ports";
 
 export function fakeIds(): IdGenerator {

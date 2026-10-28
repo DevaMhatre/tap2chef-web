@@ -15,8 +15,9 @@ import {
 } from "../domain/menu";
 import { placeAt, sortByOrder, type Ordered } from "../domain/ordering";
 import { err, ok, type Result } from "../domain/result";
-import { applyChanges } from "./menuChanges";
+import { applyChanges } from "./applyChanges";
 import type { IdGenerator, MenuChange, MenuRecord, MenuRepository, MenuSnapshot } from "./ports";
+import { createSerialWriter, type Plan as SerialPlan } from "./serialWriter";
 
 export type Undo = () => Promise<void>;
 
@@ -46,7 +47,7 @@ export type MenuEditor = {
 
 export const FIRST_PROFILE_NAME = "Dine-In";
 
-type Plan<T> = { changes: MenuChange[]; result: T };
+type Plan<T> = SerialPlan<MenuChange, T>;
 const nothing = <T>(result: T): Plan<T> => ({ changes: [], result });
 
 // placeAt's sort-key changes as records to write. Usually just the moved
@@ -69,35 +70,9 @@ const savedRecord = <T>(changes: MenuChange[], id: string): T =>
 // The menu builder's rules and write discipline, free of React so it would
 // survive a rewrite of the UI.
 export function createMenuEditor(repository: MenuRepository, ids: IdGenerator): MenuEditor {
-  // What commands plan against: the repository's view plus any writes it
-  // hasn't emitted yet.
-  let latest: MenuSnapshot | null = null;
-  let queue: Promise<unknown> = Promise.resolve();
-  const inFlight = new Map<string, Promise<unknown>>();
+  const writer = createSerialWriter<MenuSnapshot, MenuChange>((changes) => repository.write(changes), applyChanges);
+  const run = <T>(key: string, plan: (menu: MenuSnapshot) => Plan<T>): Promise<T> => writer.run(key, plan);
   let lastUsed: { categoryId?: CategoryId; diet?: Diet } = {};
-
-  // Writes run one at a time, each planned against the result of the one
-  // before, so fast bulk entry never plans two items from the same stale
-  // menu. A repeated command (double tap) gets the pending promise instead
-  // of running twice.
-  function run<T>(key: string, plan: (menu: MenuSnapshot) => Plan<T>): Promise<T> {
-    const pending = inFlight.get(key);
-    if (pending) return pending as Promise<T>;
-
-    const task = queue.then(async () => {
-      if (!latest) throw new Error("Menu is not loaded yet");
-      const { changes, result } = plan(latest);
-      if (changes.length > 0) {
-        await repository.write(changes);
-        latest = applyChanges(latest, changes);
-      }
-      return result;
-    });
-    const settled = task.finally(() => inFlight.delete(key));
-    inFlight.set(key, settled);
-    queue = settled.catch(() => undefined);
-    return settled;
-  }
 
   // Removals are soft, so undo writes the removed records back as they were.
   const undoOf =
@@ -156,6 +131,7 @@ export function createMenuEditor(repository: MenuRepository, ids: IdGenerator): 
       }),
 
     newItem() {
+      const latest = writer.current();
       const sortedCategories = sortByOrder(latest?.categories ?? []);
       const remembered = sortedCategories.find((c) => c.id === lastUsed.categoryId);
       return {
@@ -259,7 +235,7 @@ export function createMenuEditor(repository: MenuRepository, ids: IdGenerator): 
   return {
     subscribe: (onChange) =>
       repository.subscribe((menu) => {
-        latest = menu;
+        writer.observe(menu);
         onChange(menu);
       }),
     commands,
