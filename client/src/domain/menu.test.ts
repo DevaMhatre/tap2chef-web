@@ -3,6 +3,7 @@ import {
   groupByCategory,
   isDuplicateName,
   menuFor,
+  resolvePrice,
   validateItemDraft,
   validateName,
   validatePrice,
@@ -10,6 +11,7 @@ import {
   type CategoryId,
   type ItemDraft,
   type ItemId,
+  type ItemOverride,
   type MenuItem,
   type ProfileId,
 } from "./menu";
@@ -171,5 +173,32 @@ describe("menuFor", () => {
   it("hides items and sections a profile doesn't sell", () => {
     expect(menuFor(takeaway, categories, items)).toHaveLength(1);
     expect(menuFor(dineIn, categories, items)).toHaveLength(2);
+  });
+
+  it("applies a shop's own price and its not-sold-here", () => {
+    const overrides: ItemOverride[] = [
+      { itemId: "tikka" as ItemId, profiles: { [dineIn]: { kind: "price", pricing: { kind: "fixed", price: paise(26000) } } } },
+      { itemId: "thali" as ItemId, profiles: { [dineIn]: { kind: "notSold" } } },
+    ];
+    const sections = menuFor(dineIn, categories, items, overrides);
+    expect(sections).toHaveLength(1);
+    expect(sections[0]!.items[0]!.pricing).toEqual({ kind: "fixed", price: 26000 });
+  });
+});
+
+describe("resolvePrice", () => {
+  const tikka = item("tikka");
+
+  it("inherits the account price when the shop has no override", () => {
+    expect(resolvePrice(tikka, dineIn)).toEqual({ kind: "fixed", price: 10000 });
+    expect(resolvePrice(tikka, dineIn, { itemId: tikka.id, profiles: {} })).toEqual({ kind: "fixed", price: 10000 });
+  });
+
+  it("lets a shop sell in a profile the account menu doesn't", () => {
+    const override: ItemOverride = {
+      itemId: tikka.id,
+      profiles: { [takeaway]: { kind: "price", pricing: { kind: "fixed", price: paise(0) } } },
+    };
+    expect(resolvePrice(tikka, takeaway, override)).toEqual({ kind: "fixed", price: 0 });
   });
 });

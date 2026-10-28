@@ -118,8 +118,27 @@ export function validateItemDraft(draft: ItemDraft): Result<ItemFields, ItemDraf
   return ok({ name: name.value, categoryId: draft.categoryId, diet: draft.diet, prices });
 }
 
-export function priceFor(item: MenuItem, profileId: ProfileId): Pricing | undefined {
-  return item.prices[profileId];
+// ---------------------------------------------------------------- shop overrides
+
+// The menu belongs to the account; a shop stores only how it differs. No
+// override means the shop sells the item exactly as the account menu says.
+export type ProfileOverride = { kind: "price"; pricing: Pricing } | { kind: "notSold" };
+
+export type ItemOverride = {
+  itemId: ItemId;
+  /** Profiles not named here inherit the account price. */
+  profiles: Partial<Record<ProfileId, ProfileOverride>>;
+};
+
+/** This shop's price for an item in a profile, or undefined if not sold there. */
+export function resolvePrice(
+  item: MenuItem,
+  profileId: ProfileId,
+  override?: ItemOverride,
+): Pricing | undefined {
+  const local = override?.profiles[profileId];
+  if (!local) return item.prices[profileId];
+  return local.kind === "price" ? local.pricing : undefined;
 }
 
 // ---------------------------------------------------------------- menu views
@@ -157,10 +176,12 @@ export function menuFor(
   profileId: ProfileId,
   categories: readonly Category[],
   items: readonly MenuItem[],
+  overrides: readonly ItemOverride[] = [],
 ): MenuSection<OrderableItem>[] {
+  const overrideFor = new Map(overrides.map((o) => [o.itemId, o]));
   return groupByCategory(categories, items).flatMap((section) => {
     const orderable = section.items.flatMap((item) => {
-      const pricing = priceFor(item, profileId);
+      const pricing = resolvePrice(item, profileId, overrideFor.get(item.id));
       return pricing ? [{ item, pricing }] : [];
     });
     return orderable.length > 0 ? [{ ...section, items: orderable }] : [];

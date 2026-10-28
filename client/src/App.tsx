@@ -1,7 +1,9 @@
 import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { PortsProvider } from "./usecases/PortsProvider";
 import type { Ports } from "./usecases/ports";
+import { dexieMenuRepository } from "./infrastructure/db/dexieMenuRepository";
 import { dexieSyncRepository } from "./infrastructure/db/dexieSyncRepository";
+import { newId } from "./infrastructure/id";
 import { browserNetworkStatus } from "./infrastructure/network";
 import AppShell from "./ui/AppShell";
 import ComingSoon from "./ui/pages/ComingSoon";
@@ -12,6 +14,8 @@ import Today from "./ui/pages/Today";
 const ports: Ports = {
   sync: dexieSyncRepository,
   network: browserNetworkStatus,
+  menu: dexieMenuRepository,
+  ids: { newId },
 };
 
 export default function App() {

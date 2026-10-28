@@ -58,3 +58,8 @@ db.version(1).stores({
   // Changes waiting to be pushed to the server, oldest first.
   outbox: "++seq, table, recordId",
 });
+
+// The menu is shared by every profile, so categories no longer belong to one.
+db.version(2).stores({
+  categories: "id, tenantId, updatedAt",
+});
