@@ -3,7 +3,7 @@ import { sortByOrder } from "./ordering";
 import { err, ok, type Result } from "./result";
 
 // Branded so a category id can't be passed where a profile id is expected.
-type Id<Brand extends string> = string & { readonly __brand: Brand };
+export type Id<Brand extends string> = string & { readonly __brand: Brand };
 export type ProfileId = Id<"ProfileId">;
 export type CategoryId = Id<"CategoryId">;
 export type ItemId = Id<"ItemId">;
@@ -13,6 +13,14 @@ export type Diet = "veg" | "nonVeg" | "egg";
 // One arm today. Half/Full portions, if needed, become a new arm here; stored
 // items and existing screens are unaffected.
 export type Pricing = { kind: "fixed"; price: Paise };
+
+/** What one unit costs. A future portions arm answers per portion. */
+export function unitPrice(pricing: Pricing): Paise {
+  switch (pricing.kind) {
+    case "fixed":
+      return pricing.price;
+  }
+}
 
 /** A price list chosen per order, e.g. "Dine-In" or "Takeaway". */
 export type MenuProfile = { id: ProfileId; name: string; sortKey: string };
@@ -203,4 +211,14 @@ export function menuFor(
     });
     return orderable.length > 0 ? [{ ...section, items: orderable }] : [];
   });
+}
+
+// Mid-rush search: "pan" finds Paneer Tikka by its start, "tikka" by a later
+// word, "pt" by its initials. Anything else is noise on an 80-dish menu.
+export function matchesSearch(name: string, query: string): boolean {
+  const q = normalizeName(query).toLowerCase();
+  if (q === "") return true;
+  const words = normalizeName(name).toLowerCase().split(" ");
+  if (words.some((_, i) => words.slice(i).join(" ").startsWith(q))) return true;
+  return !q.includes(" ") && q.length > 1 && words.map((w) => w[0]).join("").startsWith(q);
 }

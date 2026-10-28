@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  matchesSearch,
   groupByCategory,
   isDuplicateName,
   itemToDraft,
@@ -223,5 +224,17 @@ describe("resolvePrice", () => {
       profiles: { [takeaway]: { kind: "price", pricing: { kind: "fixed", price: paise(0) } } },
     };
     expect(resolvePrice(tikka, takeaway, override)).toEqual({ kind: "fixed", price: 0 });
+  });
+});
+
+describe("matchesSearch", () => {
+  it("finds a dish by the start of any word, or by its initials", () => {
+    expect(matchesSearch("Paneer Tikka", "pan")).toBe(true);
+    expect(matchesSearch("Paneer Tikka", "tikka")).toBe(true);
+    expect(matchesSearch("Paneer Tikka", "  PT ")).toBe(true);
+    expect(matchesSearch("Paneer Tikka", "")).toBe(true);
+    expect(matchesSearch("Paneer Tikka", "ikka")).toBe(false);
+    expect(matchesSearch("Paneer Tikka", "p")).toBe(true);
+    expect(matchesSearch("Dal Makhani", "dm")).toBe(true);
   });
 });
