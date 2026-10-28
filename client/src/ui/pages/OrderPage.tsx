@@ -1,16 +1,20 @@
 import { useState, type ReactNode } from "react";
 import { MdChevronLeft, MdMenuBook } from "react-icons/md";
 import { Link, useNavigate, useParams } from "react-router";
+import type { Paise } from "../../domain/money";
 import type { OrderId, OrderLine } from "../../domain/order";
 import type { TableId } from "../../domain/tables";
+import type { Undo } from "../../usecases/orderDesk";
 import { useOrder, type OrderTarget, type ReadyOrder } from "../../usecases/useOrder";
 import { Button } from "../design-system/Button";
 import { haptic } from "../design-system/haptic";
 import { SegmentedControl } from "../design-system/SegmentedControl";
 import { Sheet } from "../design-system/Sheet";
 import { useUndoToast } from "../design-system/UndoToast";
+import { BillSheet } from "../features/order/BillSheet";
 import { CartBar } from "../features/order/CartBar";
-import { orderTitle } from "../features/order/labels";
+import { orderTitle, shortOrderTitle } from "../features/order/labels";
+import { formatPrice } from "../format";
 import { LineSheet } from "../features/order/LineSheet";
 import { MenuPicker } from "../features/order/MenuPicker";
 import { MoveSheet } from "../features/order/MoveSheet";
@@ -30,6 +34,7 @@ export default function OrderPage() {
 // Visual-only state: which sheet is open.
 type OpenSheet =
   | { kind: "ticket" }
+  | { kind: "bill" }
   | { kind: "line"; line: OrderLine }
   | { kind: "void"; line: OrderLine }
   | { kind: "move" }
@@ -55,6 +60,14 @@ function OrderScreen({ target }: { target: OrderTarget }) {
         <Link to="/menu" className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-primary px-5 text-[17px] font-semibold text-white">
           <MdMenuBook /> Open Menu
         </Link>
+      </Empty>
+    );
+  }
+  if (screen.state === "settled") {
+    return (
+      <Empty back={back} title={`${shortOrderTitle(screen.label)} is paid`}>
+        <p className="-mt-2 text-[17px] text-muted tabular-nums">{formatPrice(screen.paid)}</p>
+        <Button onClick={() => navigate(back.to)}>Back to {back.label}</Button>
       </Empty>
     );
   }
@@ -102,6 +115,16 @@ function ReadyScreen({ screen, back }: { screen: ReadyOrder; back: { to: string;
       haptic();
       navigate(back.to);
     });
+
+  // Paid: back to the floor, where the table is free again. Undo stays on
+  // screen there for a few seconds.
+  const settled = (paid: Paise, undo: Undo) => {
+    haptic();
+    close();
+    navigate(back.to);
+    showUndo(`${orderTitle(screen.label)} paid · ${formatPrice(paid)}`, undo);
+  };
+  const openBill = () => setSheet({ kind: "bill" });
 
   const ticket = (
     <Ticket
@@ -174,20 +197,30 @@ function ReadyScreen({ screen, back }: { screen: ReadyOrder; back: { to: string;
               Send to Kitchen
             </Button>
           )}
+          {screen.canSettle && (
+            <Button className="w-full" onClick={openBill}>
+              Settle {formatPrice(screen.ticket.total)}
+            </Button>
+          )}
         </aside>
       </div>
 
       {/* Room for the cart bar, so it never covers the last dish. */}
       <div aria-hidden className="h-20 lg:hidden" />
-      <CartBar screen={screen} onOpen={() => setSheet({ kind: "ticket" })} onSend={send} />
+      <CartBar screen={screen} onOpen={() => setSheet({ kind: "ticket" })} onSend={send} onSettle={openBill} />
 
       <Sheet
         open={sheet?.kind === "ticket"}
         onClose={close}
         title={orderTitle(screen.label)}
-        dismissLabel={null}
+        dismissLabel={screen.canSettle ? "Close" : null}
         action={
-          screen.ticket.draft.length > 0 ? (
+          screen.canSettle ? (
+            // Hands over to the bill sheet in the same place.
+            <Button size="compact" onClick={openBill}>
+              Settle
+            </Button>
+          ) : screen.ticket.draft.length > 0 ? (
             <Button
               size="compact"
               onClick={() => {
@@ -219,6 +252,7 @@ function ReadyScreen({ screen, back }: { screen: ReadyOrder; back: { to: string;
           navigate(`/tables/${tableId}`, { replace: true });
         }}
       />
+      <BillSheet open={sheet?.kind === "bill"} screen={screen} onClose={close} onSettled={settled} />
       <OutTodaySheet open={sheet?.kind === "outToday"} screen={screen} onClose={close} />
     </div>
   );

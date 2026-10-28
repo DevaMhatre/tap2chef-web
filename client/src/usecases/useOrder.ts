@@ -18,11 +18,15 @@ import {
   ticketOf,
   type Order,
   type OrderId,
+  type SettleError,
   type Ticket,
 } from "../domain/order";
 import { sortByOrder } from "../domain/ordering";
+import type { Paise } from "../domain/money";
+import { err, type Result } from "../domain/result";
+import { amountPaid, fullPayment, quoteBill, type BillInput, type BillQuote } from "../domain/settlement";
 import type { DiningTable, TableId } from "../domain/tables";
-import type { OrderCommands } from "./orderDesk";
+import type { OrderCommands, Undo } from "./orderDesk";
 import { usePorts } from "./PortsProvider";
 import { labelOf, type OrderLabel } from "./useOrders";
 import { useMenuSnapshot, useOrderDesk } from "./useOrderDesk";
@@ -31,11 +35,16 @@ export type OrderTarget = { kind: "table"; tableId: TableId } | { kind: "takeawa
 
 export type DishRow = OrderableItem & { out: boolean; inCart: number };
 
+/** How the guest pays: all cash, all UPI, or cash typed and UPI the rest. */
+export type PayBy = "cash" | "upi" | "split";
+
 export type OrderScreen =
   | { state: "loading" }
   /** The table was removed, e.g. on another device. */
   | { state: "missing" }
   | { state: "noMenu" }
+  /** A takeaway already paid: its token takes nothing more. */
+  | { state: "settled"; label: OrderLabel; paid: Paise }
   | ({
       state: "ready";
       order: Order;
@@ -54,6 +63,11 @@ export type OrderScreen =
       addDish(dish: OrderableItem): ReturnType<OrderCommands["addDish"]>;
       send(): Promise<number>;
       moveTo(tableId: TableId): ReturnType<OrderCommands["moveOrder"]>;
+      /** The bill can close once nothing is waiting to go to the kitchen. */
+      canSettle: boolean;
+      quote(input: BillInput): BillQuote;
+      /** `invalid`: what was typed doesn't make a bill yet; the quote says why. */
+      settle(input: BillInput, by: PayBy): Promise<Result<Undo, SettleError | "invalid">>;
     } & Pick<OrderCommands, "stepQuantity" | "setNote" | "removeLine" | "voidLine" | "setOutToday">);
 
 export type ReadyOrder = Extract<OrderScreen, { state: "ready" }>;
@@ -69,6 +83,12 @@ export function useOrder(target: OrderTarget): OrderScreen {
 
   if (!snapshot || !menu) return { state: "loading" };
   if (target.kind === "table" && !snapshot.tables.some((t) => t.id === target.tableId)) return { state: "missing" };
+  if (target.kind === "takeaway") {
+    const paid = snapshot.orders.find((o) => o.id === target.orderId);
+    if (paid?.state.status === "settled") {
+      return { state: "settled", label: labelOf({ order: paid }, snapshot.tables), paid: amountPaid(paid.state.bill.payments) };
+    }
+  }
   if (menu.profiles.length === 0 || menu.items.length === 0) return { state: "noMenu" };
 
   const active = activeOrders(snapshot.orders, snapshot.lines);
@@ -113,13 +133,15 @@ export function useOrder(target: OrderTarget): OrderScreen {
     items: section.items.map((dish) => ({ ...dish, out: out.has(dish.item.id), inCart: inCart.get(dish.item.id) ?? 0 })),
   }));
   const dishes = sections.flatMap((s) => s.items);
+  const ticket = ticketOf(lines);
+  const quote = (input: BillInput) => quoteBill(ticket.total, input);
   const busy = new Set(active.flatMap((a) => (a.order.channel.type === "dineIn" ? [a.order.channel.tableId] : [])));
 
   return {
     state: "ready",
     order,
     label: labelOf({ order }, snapshot.tables),
-    ticket: ticketOf(lines),
+    ticket,
     profileChoice: !stored && profiles.length > 1 ? { profiles, chosen: profileId } : null,
     profileName: profiles.find((p) => p.id === profileId)?.name ?? "",
     sections,
@@ -135,5 +157,16 @@ export function useOrder(target: OrderTarget): OrderScreen {
     removeLine: commands.removeLine,
     voidLine: commands.voidLine,
     setOutToday: commands.setOutToday,
+    canSettle: ticket.rounds.length > 0 && ticket.draft.length === 0,
+    quote,
+    settle(input, by) {
+      // Quoted from the total on screen: if the stored dishes differ, the
+      // desk refuses rather than charge for something staff didn't see.
+      const q = quote(input);
+      if (!q.discount.ok) return Promise.resolve(err("invalid"));
+      const payments = by === "split" ? (q.split.ok ? q.split.value : undefined) : fullPayment(by, q.due);
+      if (!payments) return Promise.resolve(err("invalid"));
+      return commands.settle(order.id, payments, q.discount.value);
+    },
   };
 }

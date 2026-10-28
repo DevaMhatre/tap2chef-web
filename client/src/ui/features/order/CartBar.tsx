@@ -4,11 +4,11 @@ import type { ReadyOrder } from "../../../usecases/useOrder";
 import { Button } from "../../design-system/Button";
 import { formatPrice } from "../../format";
 
-type Props = { screen: ReadyOrder; onOpen: () => void; onSend: () => void };
+type Props = { screen: ReadyOrder; onOpen: () => void; onSend: () => void; onSettle: () => void };
 
 // Phones and tablets in portrait: the order lives in a bar under the thumb. Send is on the bar itself,
 // so table → dish → Send is three taps.
-export function CartBar({ screen, onOpen, onSend }: Props) {
+export function CartBar({ screen, onOpen, onSend, onSettle }: Props) {
   const { draft, rounds, total } = screen.ticket;
   if (draft.length === 0 && rounds.length === 0) return null;
   const unsent = dishCount(draft);
@@ -25,10 +25,17 @@ export function CartBar({ screen, onOpen, onSend }: Props) {
             </span>
           </span>
         </button>
-        {unsent > 0 && (
+        {/* One primary at a time: Send while anything waits for the kitchen, then Settle. */}
+        {unsent > 0 ? (
           <Button className="min-h-12 px-6" onClick={onSend}>
             Send
           </Button>
+        ) : (
+          screen.canSettle && (
+            <Button className="min-h-12 px-6" onClick={onSettle}>
+              Settle
+            </Button>
+          )
         )}
       </div>
     </div>

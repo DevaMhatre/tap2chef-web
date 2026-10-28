@@ -103,4 +103,41 @@ describe("useOrder", () => {
     const gone = renderOrder({ kind: "table", tableId: "gone" as TableId });
     await waitFor(() => expect(gone.result.current.state).toBe("missing"));
   });
+
+  it("settles only once everything is sent, with a discount, and frees the table", async () => {
+    const { result } = renderOrder({ kind: "table", tableId: t1 });
+    await waitFor(() => expect(result.current.state).toBe("ready"));
+    await act(async () => {
+      await ready(result.current).addDish(ready(result.current).dishes[0]!);
+    });
+    expect(ready(result.current).canSettle).toBe(false);
+    await act(async () => {
+      await ready(result.current).send();
+    });
+    expect(ready(result.current).canSettle).toBe(true);
+
+    const input = { finalAmount: "200", reason: "Regular", cash: "" };
+    expect(ready(result.current).quote(input)).toMatchObject({ subtotal: 22000, due: 20000 });
+    expect(await ready(result.current).settle({ ...input, finalAmount: "2oo" }, "cash")).toEqual({ ok: false, error: "invalid" });
+    expect(await ready(result.current).settle({ ...input, cash: "" }, "split")).toEqual({ ok: false, error: "invalid" });
+
+    await act(async () => {
+      expect((await ready(result.current).settle({ ...input, cash: "50" }, "split")).ok).toBe(true);
+    });
+    // The table is free: a fresh, empty order.
+    expect(ready(result.current).ticket.rounds).toEqual([]);
+  });
+
+  it("shows a paid takeaway as paid", async () => {
+    const { result } = renderOrder({ kind: "takeaway", orderId: "tk" as OrderId });
+    await waitFor(() => expect(result.current.state).toBe("ready"));
+    await act(async () => {
+      await ready(result.current).addDish(ready(result.current).dishes[0]!);
+      await ready(result.current).send();
+    });
+    await act(async () => {
+      await ready(result.current).settle({ finalAmount: "", reason: "", cash: "" }, "upi");
+    });
+    expect(result.current).toEqual({ state: "settled", label: { kind: "token", token: 1 }, paid: 20000 });
+  });
 });
