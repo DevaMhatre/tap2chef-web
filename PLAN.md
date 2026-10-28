@@ -85,7 +85,8 @@ Brainstormed 2026-10-29 against Toast, Square and Petpooja. The discount is in; 
 
 Said no to: split by seat / by item / evenly (several payments per bill covers it), promotions engine, reopening a settled bill.
 
-### 7. Expenses and the day's dashboard
+### 7. Expenses and the day's dashboard — **next** (starts in a new session)
+Start with `LEARNINGS.md`'s checklist: walk how the owner pays and records expenses today (cash from the drawer? a notebook?), then the market, then our call. Expenses are records of their own (two devices). The day's numbers must also show a bill opened yesterday and settled today, and any payment removed after settling.
 - [ ] Daily expenses (cash / UPI)
 - [ ] The day's numbers
 
