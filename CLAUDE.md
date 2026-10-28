@@ -2,6 +2,10 @@
 
 Read at the start of every session. These are non-negotiable defaults.
 
+**Then read [`PLAN.md`](PLAN.md)** — the single source of truth for what is
+done, what was decided and what is open. Update it whenever a feature passes
+the definition of done or a decision is made or changed.
+
 ---
 
 ## Product
@@ -322,13 +326,5 @@ Before reporting work complete: typecheck, lint, tests and build all pass.
 
 ## Roadmap
 
-1. ~~Repo, client, server~~
-2. ~~Installable PWA that opens offline~~
-3. ~~Local database + outbox, TypeScript, layered structure~~
-4. **Menu builder** — menu profiles, categories, items (next)
-5. Table grid and orders (fire → cooking → served)
-6. Bill settlement (cash / UPI split)
-7. Expenses and the day's dashboard
-8. Accounts, shops, members and real login; sync
-   (subscriptions and billing follow)
-9. Printing / KOT
+Lives in [`PLAN.md`](PLAN.md), with what's done, every decision and the open
+questions. Not repeated here.
