@@ -28,10 +28,12 @@ export function ListSection({ header, headerAction, footer, id, children }: Sect
 type RowProps = Omit<ComponentProps<"button">, "children"> & {
   leading?: ReactNode;
   trailing?: ReactNode;
+  /** A quiet second line under the title. */
+  detail?: ReactNode;
   children: ReactNode;
 };
 
-export function ListRow({ leading, trailing, children, className = "", ...props }: RowProps) {
+export function ListRow({ leading, trailing, detail, children, className = "", ...props }: RowProps) {
   return (
     <button
       type="button"
@@ -39,7 +41,10 @@ export function ListRow({ leading, trailing, children, className = "", ...props 
       {...props}
     >
       {leading}
-      <span className="min-w-0 flex-1 truncate">{children}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">{children}</span>
+        {detail && <span className="block truncate text-[13px] text-muted">{detail}</span>}
+      </span>
       {trailing}
     </button>
   );

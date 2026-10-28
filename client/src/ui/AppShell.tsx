@@ -6,8 +6,8 @@ import {
   MdMenuBook,
   MdPayments,
   MdInsights,
+  MdCheckCircle,
 } from "react-icons/md";
-import { useSyncStatus } from "../usecases/useSyncStatus";
 
 const NAV: { to: string; label: string; icon: IconType }[] = [
   { to: "/tables", label: "Tables", icon: MdTableRestaurant },
@@ -27,22 +27,15 @@ const tabClass = ({ isActive }: { isActive: boolean }) =>
     isActive ? "text-primary" : "text-muted"
   }`;
 
-function SyncBadge() {
-  const status = useSyncStatus();
-  const online = status.connection === "online";
-
+// Sync doesn't exist yet, so an "unsynced" count would only ever grow and an
+// "Offline" warning would warn about nothing — the app works the same either
+// way. Until sync lands, say the one thing that's true: the work is safe here.
+// useSyncStatus is kept for when there is something to report.
+function SavedBadge() {
   return (
-    <span
-      className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-semibold ${
-        online ? "bg-success/15 text-success" : "bg-warning/15 text-warning"
-      }`}
-      title={`${status.pendingChanges} change(s) saved on this device, not yet synced`}
-    >
-      <span className={`h-2 w-2 rounded-full ${online ? "bg-success" : "bg-warning"}`} />
-      {online ? "Online" : "Offline"}
-      {status.pendingChanges > 0 && (
-        <span className="opacity-80">· {status.pendingChanges} unsynced</span>
-      )}
+    <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2.5 py-1 text-xs font-semibold text-success">
+      <MdCheckCircle className="text-sm" aria-hidden />
+      Saved on this device
     </span>
   );
 }
@@ -64,7 +57,7 @@ export default function AppShell() {
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="sticky top-0 z-10 flex items-center justify-between border-b border-line bg-surface/95 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur">
           <span className="text-lg font-extrabold tracking-tight md:invisible">Tap2Chef</span>
-          <SyncBadge />
+          <SavedBadge />
         </header>
 
         {/* Bottom padding leaves room for the phone tab bar */}

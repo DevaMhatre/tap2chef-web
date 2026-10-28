@@ -51,3 +51,21 @@ export function priceSummary(
   if (sold.length === profiles.length) return prices;
   return `${prices} · ${sold.map((s) => s.profile.name).join(", ")} only`;
 }
+
+/**
+ * The phone row, where one line has no room for names: the first list's price
+ * on the right, and a quiet second line only when something differs —
+ * "Takeaway ₹50", "Dine-In only".
+ */
+export function compactPrices(item: MenuItem, profiles: readonly MenuProfile[]): { main: string; detail?: string } {
+  const sold = profiles.flatMap((profile) => {
+    const pricing = item.prices[profile.id];
+    return pricing ? [{ profile, price: pricing.price }] : [];
+  });
+  const [first, ...rest] = sold;
+  if (!first) return { main: "Not on sale" };
+
+  const notes = rest.filter((s) => s.price !== first.price).map((s) => `${s.profile.name} ${formatPrice(s.price)}`);
+  if (sold.length < profiles.length) notes.push(`${sold.map((s) => s.profile.name).join(", ")} only`);
+  return notes.length > 0 ? { main: formatPrice(first.price), detail: notes.join(" · ") } : { main: formatPrice(first.price) };
+}

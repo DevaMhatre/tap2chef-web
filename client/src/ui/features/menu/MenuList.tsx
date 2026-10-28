@@ -4,7 +4,7 @@ import type { ReadyMenuBuilder } from "../../../usecases/useMenuBuilder";
 import { Button } from "../../design-system/Button";
 import { DietMark } from "../../design-system/DietMark";
 import { ListNote, ListRow, ListSection } from "../../design-system/GroupedList";
-import { priceSummary } from "./display";
+import { compactPrices, priceSummary } from "./display";
 
 // Below this, jump chips are noise; above it, scrolling to Desserts is a chore.
 const CHIPS_FROM = 4;
@@ -63,21 +63,27 @@ export function MenuList({ menu, onEditItem, onEditCategory, onAddCategory }: Pr
           {section.items.length === 0 ? (
             <ListNote>No items yet</ListNote>
           ) : (
-            section.items.map((item) => (
-              <ListRow
-                key={item.id}
-                leading={<DietMark diet={item.diet} />}
-                trailing={
-                  <span className="max-w-[45%] shrink-0 truncate text-[15px] text-muted tabular-nums md:max-w-[60%]">
-                    <span className="md:hidden">{priceSummary(item, menu.profiles)}</span>
-                    <span className="hidden md:inline">{priceSummary(item, menu.profiles, { named: true })}</span>
-                  </span>
-                }
-                onClick={() => onEditItem(item.id)}
-              >
-                {item.name}
-              </ListRow>
-            ))
+            section.items.map((item) => {
+              // Phones: price on the right, differences on a second line.
+              // Wider screens: everything named on one line.
+              const compact = compactPrices(item, menu.profiles);
+              return (
+                <ListRow
+                  key={item.id}
+                  leading={<DietMark diet={item.diet} />}
+                  detail={compact.detail && <span className="md:hidden">{compact.detail}</span>}
+                  trailing={
+                    <span className="max-w-[60%] shrink-0 truncate text-[15px] text-muted tabular-nums">
+                      <span className="md:hidden">{compact.main}</span>
+                      <span className="hidden md:inline">{priceSummary(item, menu.profiles, { named: true })}</span>
+                    </span>
+                  }
+                  onClick={() => onEditItem(item.id)}
+                >
+                  {item.name}
+                </ListRow>
+              );
+            })
           )}
         </ListSection>
       ))}
