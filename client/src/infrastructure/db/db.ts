@@ -32,6 +32,8 @@ export const SYNCED_TABLES = [
   "orders",
   "orderItems",
   "expenses",
+  "diningTables",
+  "outOfStock",
 ] as const;
 
 export type SyncedTable = (typeof SYNCED_TABLES)[number];
@@ -62,4 +64,12 @@ db.version(1).stores({
 // The menu is shared by every profile, so categories no longer belong to one.
 db.version(2).stores({
   categories: "id, tenantId, updatedAt",
+});
+
+// Step 5: tables, and "out today" as its own record per item per day. Open
+// orders are read by status; a day's orders (takeaway tokens) by date.
+db.version(3).stores({
+  orders: "id, tenantId, status, businessDate, updatedAt",
+  diningTables: "id, tenantId, updatedAt",
+  outOfStock: "id, tenantId, businessDate, updatedAt",
 });

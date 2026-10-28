@@ -2,6 +2,8 @@
 // implements them; use cases never import Dexie or browser APIs directly.
 
 import type { Category, ItemOverride, MenuItem, MenuProfile } from "../domain/menu";
+import type { BusinessDate, Order, OrderLine, OutOfStock } from "../domain/order";
+import type { DiningTable } from "../domain/tables";
 
 export interface SyncRepository {
   /** Changes saved on this device and not yet pushed to the server. */
@@ -38,6 +40,37 @@ export interface MenuRepository {
   write(changes: readonly MenuChange[]): Promise<void>;
 }
 
+/** The shop's service: its tables, open orders and what is out today. Deleted records excluded. */
+export type OrderSnapshot = {
+  tables: DiningTable[];
+  /** Open orders, whichever day they began, so one left open is never lost. */
+  orders: Order[];
+  lines: OrderLine[];
+  outOfStock: OutOfStock[];
+};
+
+export type OrderRecord =
+  | { table: "tables"; record: DiningTable }
+  | { table: "orders"; record: Order }
+  | { table: "lines"; record: OrderLine }
+  | { table: "outOfStock"; record: OutOfStock };
+
+export type OrderChange = OrderRecord & { op: "put" | "remove" };
+
+export interface OrderRepository {
+  /**
+   * Emits now, then after every change. Out-of-stock records from before
+   * `since` are left out; they no longer apply.
+   */
+  subscribe(since: BusinessDate, onChange: (snapshot: OrderSnapshot) => void): () => void;
+  /** All changes land together or none do. */
+  write(changes: readonly OrderChange[]): Promise<void>;
+}
+
+export interface Clock {
+  now(): number;
+}
+
 export interface IdGenerator {
   newId(): string;
 }
@@ -46,5 +79,7 @@ export interface Ports {
   sync: SyncRepository;
   network: NetworkStatus;
   menu: MenuRepository;
+  orders: OrderRepository;
   ids: IdGenerator;
+  clock: Clock;
 }
