@@ -1,7 +1,7 @@
 import { useId, type ComponentProps, type ReactNode } from "react";
 
 const control =
-  "min-h-11 w-full rounded-xl bg-surface px-3 text-[17px] text-ink outline-none placeholder:text-muted/70 focus:ring-2 focus:ring-ink/20 aria-invalid:ring-2 aria-invalid:ring-primary";
+  "min-h-11 w-full rounded-xl px-3 text-[17px] text-ink outline-none placeholder:text-muted/70 focus:ring-2 focus:ring-ink/20 aria-invalid:ring-2 aria-invalid:ring-primary";
 
 function Label({ htmlFor, hidden, children }: { htmlFor: string; hidden?: boolean; children: ReactNode }) {
   return (
@@ -29,10 +29,12 @@ type TextFieldProps = Omit<ComponentProps<"input">, "prefix"> & {
   labelHidden?: boolean;
   /** Quiet guidance under the field; an error replaces it. */
   hint?: string;
+  /** Inside a list row, whose surface would otherwise hide the field's edge. */
+  inset?: boolean;
 };
 
 // 17px text: below 16px iOS zooms the page when the field is focused.
-export function TextField({ label, error, prefix, labelHidden, hint, id, className = "", ...input }: TextFieldProps) {
+export function TextField({ label, error, prefix, labelHidden, hint, inset, id, className = "", ...input }: TextFieldProps) {
   const fallbackId = useId();
   const inputId = id ?? fallbackId;
   const errorId = `${inputId}-error`;
@@ -51,7 +53,7 @@ export function TextField({ label, error, prefix, labelHidden, hint, id, classNa
           id={inputId}
           aria-invalid={error ? true : undefined}
           aria-describedby={error ? errorId : undefined}
-          className={`${control} ${prefix ? "pl-7 tabular-nums" : ""}`}
+          className={`${control} ${inset ? "bg-surface-2" : "bg-surface"} ${prefix ? "pl-7 tabular-nums" : ""}`}
           {...input}
         />
       </div>
@@ -69,7 +71,7 @@ export function SelectField({ label, error, id, className = "", children, ...sel
   return (
     <div className={className}>
       <Label htmlFor={selectId}>{label}</Label>
-      <select id={selectId} aria-invalid={error ? true : undefined} className={`${control} appearance-none`} {...select}>
+      <select id={selectId} aria-invalid={error ? true : undefined} className={`${control} appearance-none bg-surface`} {...select}>
         {children}
       </select>
       <FieldError>{error}</FieldError>

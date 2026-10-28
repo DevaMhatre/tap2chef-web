@@ -22,7 +22,7 @@ export function CategorySheet({ target, menu, onClose }: Props) {
       onClose={onClose}
       title={target?.kind === "edit" ? "Edit Category" : "New Category"}
       action={
-        <Button variant="plain" type="submit" form={FORM_ID} className="font-semibold">
+        <Button size="compact" type="submit" form={FORM_ID}>
           {target?.kind === "edit" ? "Save" : "Add"}
         </Button>
       }

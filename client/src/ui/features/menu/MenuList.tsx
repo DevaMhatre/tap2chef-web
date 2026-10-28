@@ -51,7 +51,8 @@ export function MenuList({ menu, onEditItem, onEditCategory, onAddCategory }: Pr
             section.kind === "category" && (
               <Button
                 variant="plain"
-                className="-mr-3 text-[15px]"
+                size="compact"
+                className="-mr-3"
                 aria-label={`Edit ${title}`}
                 onClick={() => onEditCategory(section.category.id)}
               >

@@ -1,4 +1,24 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+
+// How much of the layout the on-screen keyboard covers. Android shrinks the
+// page itself (interactive-widget=resizes-content), so this stays 0 there;
+// iOS Safari lays the keyboard over the page, so the sheet has to rise by it.
+function useKeyboardInset(active: boolean): number {
+  const [inset, setInset] = useState(0);
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!active || !viewport) return;
+    const update = () => setInset(Math.max(0, Math.round(window.innerHeight - viewport.height - viewport.offsetTop)));
+    viewport.addEventListener("resize", update);
+    viewport.addEventListener("scroll", update);
+    return () => {
+      viewport.removeEventListener("resize", update);
+      viewport.removeEventListener("scroll", update);
+      setInset(0);
+    };
+  }, [active]);
+  return inset;
+}
 
 type Props = {
   open: boolean;
@@ -15,6 +35,7 @@ type Props = {
 // from the browser. Slides up from the bottom on phones; centred on wider screens.
 export function Sheet({ open, onClose, title, action, dismissLabel = "Cancel", children }: Props) {
   const ref = useRef<HTMLDialogElement>(null);
+  const keyboard = useKeyboardInset(open);
 
   useEffect(() => {
     const dialog = ref.current;
@@ -30,10 +51,11 @@ export function Sheet({ open, onClose, title, action, dismissLabel = "Cancel", c
       onClose={onClose}
       // A tap on the dimmed backdrop lands on the dialog element itself.
       onClick={(event) => event.target === event.currentTarget && onClose()}
+      style={keyboard > 0 ? { marginBottom: keyboard, maxHeight: `calc(100dvh - ${keyboard}px - 1rem)` } : undefined}
       className="m-0 mt-auto max-h-[92dvh] w-full max-w-none animate-[sheet-up_320ms_cubic-bezier(0.32,0.72,0,1)] overflow-hidden rounded-t-3xl bg-bg p-0 text-ink backdrop:animate-[fade-in_200ms] backdrop:bg-scrim md:m-auto md:max-w-lg md:animate-[fade-in_180ms] md:rounded-3xl"
     >
       {open && (
-        <div className="flex max-h-[92dvh] flex-col">
+        <div className="flex max-h-[inherit] flex-col">
           <header className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-2 pt-2">
             {dismissLabel === null ? (
               <span />

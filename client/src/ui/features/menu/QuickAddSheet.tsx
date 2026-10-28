@@ -1,4 +1,5 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { MdCheckCircle } from "react-icons/md";
 import { withPriceEverywhere, type CategoryId, type Diet, type ItemDraftErrors, type ItemId } from "../../../domain/menu";
 import type { ReadyMenuBuilder } from "../../../usecases/useMenuBuilder";
 import { Button } from "../../design-system/Button";
@@ -24,35 +25,42 @@ type Props = { open: boolean; onClose: () => void; menu: ReadyMenuBuilder };
 // Built for setup day: type a dish, its price, Return — and straight on to the
 // next one, with the category and veg mark remembered.
 export function QuickAddSheet({ open, onClose, menu }: Props) {
+  const [count, setCount] = useState(0);
   return (
     <Sheet
       open={open}
-      onClose={onClose}
-      title="Add Items"
+      onClose={() => {
+        setCount(0);
+        onClose();
+      }}
+      title={count > 0 ? `Add Items · ${count}` : "Add Items"}
       dismissLabel={null}
       action={
-        <Button variant="plain" onClick={onClose}>
+        <Button size="compact" variant="tinted" onClick={onClose}>
           Done
         </Button>
       }
     >
-      <QuickAddForm menu={menu} />
+      <QuickAddForm menu={menu} onCount={setCount} />
     </Sheet>
   );
 }
 
 type Added = { id: ItemId; name: string; diet: Diet; summary: string };
+type Notice = { kind: "added"; item: Added } | { kind: "removed"; name: string } | null;
 
 type Form = ReturnType<ReadyMenuBuilder["newItem"]> & { price: string };
 const isBlank = (f: Form) => f.draft.name.trim() === "" && f.price.trim() === "";
 
-function QuickAddForm({ menu }: { menu: ReadyMenuBuilder }) {
+function QuickAddForm({ menu, onCount }: { menu: ReadyMenuBuilder; onCount: (count: number) => void }) {
   const categories = categoriesOf(menu);
   const [form, setForm] = useState<Form>(() => ({ ...menu.newItem(), price: "" }));
   const [addingCategory, setAddingCategory] = useState(false);
   const [errors, setErrors] = useState<ItemDraftErrors>({});
   const [failure, setFailure] = useState<string>();
   const [added, setAdded] = useState<Added[]>([]);
+  const [notice, setNotice] = useState<Notice>(null);
+  useEffect(() => onCount(added.length), [added.length, onCount]);
   const nameRef = useRef<HTMLInputElement>(null);
   const priceRef = useRef<HTMLInputElement>(null);
 
@@ -107,19 +115,23 @@ function QuickAddForm({ menu }: { menu: ReadyMenuBuilder }) {
     }
     haptic();
     const item = result.value;
-    setAdded((list) => [
-      { id: sent.id, name: item.name, diet: item.diet, summary: priceSummary(item, menu.profiles) },
-      ...list,
-    ]);
+    const entry: Added = { id: sent.id, name: item.name, diet: item.diet, summary: priceSummary(item, menu.profiles) };
+    setAdded((list) => [entry, ...list]);
+    setNotice({ kind: "added", item: entry });
   }
 
-  async function undo(id: ItemId) {
-    await menu.removeItem(id);
-    setAdded((list) => list.filter((a) => a.id !== id));
+  async function undo(entry: Added) {
+    await menu.removeItem(entry.id);
+    setAdded((list) => list.filter((a) => a.id !== entry.id));
+    setNotice({ kind: "removed", name: entry.name });
   }
 
   return (
     <form onSubmit={save} className="space-y-4" noValidate>
+      {/* At the top, where the eye already is: the keyboard hides everything
+          below the form on a phone. */}
+      <Confirmation notice={notice} multipleLists={menu.profiles.length > 1} onUndo={undo} />
+
       {addingCategory ? (
         <NewCategoryField menu={menu} label="New category" onAdded={useCategory} onCancel={() => setAddingCategory(false)} />
       ) : (
@@ -140,38 +152,39 @@ function QuickAddForm({ menu }: { menu: ReadyMenuBuilder }) {
         </SelectField>
       )}
 
-      <TextField
-        ref={nameRef}
-        label="Name"
-        placeholder="e.g. Paneer Tikka"
-        autoFocus
-        autoCapitalize="words"
-        autoComplete="off"
-        enterKeyHint="next"
-        value={form.draft.name}
-        error={itemNameMessage(errors)}
-        onChange={(e) => setDraft({ name: e.target.value })}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            priceRef.current?.focus();
-          }
-        }}
-      />
-
-      <TextField
-        ref={priceRef}
-        label="Price"
-        prefix="₹"
-        placeholder="0"
-        inputMode="decimal"
-        autoComplete="off"
-        enterKeyHint="enter"
-        value={form.price}
-        error={firstPriceMessage(errors)}
-        hint={menu.profiles.length > 1 ? "Same price in every list. Change one later by tapping the item." : undefined}
-        onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))}
-      />
+      {/* Side by side, so the whole form fits above a phone keyboard. */}
+      <div className="grid grid-cols-[1fr_7.5rem] items-start gap-3">
+        <TextField
+          ref={nameRef}
+          label="Name"
+          placeholder="e.g. Paneer Tikka"
+          autoFocus
+          autoCapitalize="words"
+          autoComplete="off"
+          enterKeyHint="next"
+          value={form.draft.name}
+          error={itemNameMessage(errors)}
+          onChange={(e) => setDraft({ name: e.target.value })}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              priceRef.current?.focus();
+            }
+          }}
+        />
+        <TextField
+          ref={priceRef}
+          label="Price"
+          prefix="₹"
+          placeholder="0"
+          inputMode="decimal"
+          autoComplete="off"
+          enterKeyHint="enter"
+          value={form.price}
+          error={firstPriceMessage(errors)}
+          onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))}
+        />
+      </div>
 
       <div>
         <SegmentedControl
@@ -204,7 +217,7 @@ function QuickAddForm({ menu }: { menu: ReadyMenuBuilder }) {
                 </span>
               }
               aria-label={`Undo adding ${a.name}`}
-              onClick={() => undo(a.id)}
+              onClick={() => undo(a)}
             >
               {a.name}
             </ListRow>
@@ -212,5 +225,42 @@ function QuickAddForm({ menu }: { menu: ReadyMenuBuilder }) {
         </ListSection>
       )}
     </form>
+  );
+}
+
+// One line that is always there, so the form never jumps: a hint before the
+// first dish, then what just happened.
+function Confirmation({
+  notice,
+  multipleLists,
+  onUndo,
+}: {
+  notice: Notice;
+  multipleLists: boolean;
+  onUndo: (entry: Added) => void;
+}) {
+  return (
+    <div role="status" aria-live="polite" className="flex min-h-11 items-center gap-2 rounded-xl bg-surface pl-3">
+      {notice === null ? (
+        <span className="py-2 pr-3 text-[15px] text-muted">
+          Type a dish, its price, then Return.{multipleLists && " One price for every list."}
+        </span>
+      ) : notice.kind === "removed" ? (
+        <span key={`removed-${notice.name}`} className="flex-1 animate-[toast-in_220ms_ease-out] truncate pr-3 text-[15px] text-muted">
+          Removed {notice.name}
+        </span>
+      ) : (
+        <span key={notice.item.id} className="flex min-w-0 flex-1 animate-[toast-in_220ms_ease-out] items-center gap-2">
+          <MdCheckCircle className="shrink-0 text-xl text-success" aria-hidden />
+          <span className="min-w-0 flex-1 truncate text-[15px]">
+            <span className="font-semibold">{notice.item.name}</span> added
+          </span>
+          <span className="shrink-0 text-[15px] text-muted tabular-nums">{notice.item.summary}</span>
+          <Button variant="plain" size="compact" onClick={() => onUndo(notice.item)}>
+            Undo
+          </Button>
+        </span>
+      )}
+    </div>
   );
 }

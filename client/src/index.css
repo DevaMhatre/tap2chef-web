@@ -16,6 +16,8 @@
   --color-nonveg: #8b3a1a;
   --color-egg: #ca8a04;
   --color-scrim: rgb(0 0 0 / 0.35);
+  /* A control's chosen part, lifted off its track (segment thumb, switch off-track) */
+  --color-raised: #ffffff;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -30,6 +32,8 @@
     --color-nonveg: #e0805a;
     --color-egg: #facc15;
     --color-scrim: rgb(0 0 0 / 0.6);
+    /* Lighter than the track, as in dark mode a raised surface catches light */
+    --color-raised: #4a5b6d;
   }
 }
 

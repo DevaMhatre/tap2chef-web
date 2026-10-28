@@ -22,7 +22,7 @@ export function PriceListsSheet({ open, menu, onClose }: Props) {
       title="Price Lists"
       dismissLabel={null}
       action={
-        <Button variant="plain" onClick={onClose}>
+        <Button size="compact" variant="tinted" onClick={onClose}>
           Done
         </Button>
       }
@@ -75,6 +75,7 @@ function ProfileRow({ profile, menu }: { profile: MenuProfile; menu: ReadyMenuBu
       <TextField
         label="Price list name"
         labelHidden
+        inset
         className="flex-1"
         autoComplete="off"
         enterKeyHint="done"

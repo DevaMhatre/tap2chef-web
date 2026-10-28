@@ -24,7 +24,7 @@ export function ItemSheet({ item, menu, onClose }: Props) {
       onClose={onClose}
       title="Edit Item"
       action={
-        <Button variant="plain" type="submit" form={FORM_ID} className="font-semibold">
+        <Button size="compact" type="submit" form={FORM_ID}>
           Save
         </Button>
       }
@@ -117,6 +117,7 @@ function ItemForm({ item, menu, onClose }: { item: MenuItem; menu: ReadyMenuBuil
               <TextField
                 label={`${profile.name} price`}
                 labelHidden
+                inset
                 prefix="₹"
                 inputMode="decimal"
                 autoComplete="off"

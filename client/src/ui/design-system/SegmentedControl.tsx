@@ -25,9 +25,11 @@ export function SegmentedControl<T extends string>({ label, options, value, onCh
             type="button"
             role="radio"
             aria-checked={selected}
+            // Keep focus (and the phone keyboard) in the field being typed in.
+            onPointerDown={(event) => event.preventDefault()}
             onClick={() => onChange(option.value)}
             className={`flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-lg text-[15px] font-semibold transition-colors ${
-              selected ? "bg-surface text-ink shadow-sm" : "text-muted"
+              selected ? "bg-raised text-ink shadow-sm" : "text-muted"
             }`}
           >
             {option.label}
