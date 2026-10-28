@@ -170,7 +170,7 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 
 ### Hosting
 - Tap2Chef is a static PWA served by nginx at `tap2chef.devamhatre.com` on the owner's VPS, with its own Let's Encrypt certificate; the built app is published as the `site` branch and pulled by the server — no build tools or keys on the server, no server keys on the (company) dev laptop (2026-10-29).
-- The owner's sites moved from devamhatre.cloud (expires 2026-11-11) to devamhatre.com, each with its own certificate (never one shared with .cloud, whose renewal will fail after expiry); .cloud 301-redirects until then. POS waits for its DNS record, then the move script is rerun (2026-10-29).
+- The owner's sites moved from devamhatre.cloud (expires 2026-11-11) to devamhatre.com, each with its own certificate (never one shared with .cloud, whose renewal will fail after expiry); .cloud 301-redirects until then; portfolio, POS and Tap2Chef all live on .com, and Google Search Console has the change of address (2026-10-29).
 
 ### Design
 - Crowding: history is a summary row you tap into (Wallet, Settings); collapsible sections only where the owner edits (Menu tab), never on the order screen, where every dish must be one tap away (2026-10-29).
