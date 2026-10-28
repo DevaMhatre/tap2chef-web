@@ -232,3 +232,92 @@ describe("setOutToday", () => {
     expect(fake.current().outOfStock).toHaveLength(1);
   });
 });
+
+describe("settle", () => {
+  const cash = (amount: number) => ({ method: "cash" as const, amount: paise(amount) });
+  const upi = (amount: number) => ({ method: "upi" as const, amount: paise(amount) });
+  const o1 = "o1" as OrderId;
+
+  async function served() {
+    const ctx = await setup();
+    await ctx.desk.addDish(pending("o1"), roti);
+    await ctx.desk.addDish(pending("o1"), paneer);
+    await ctx.desk.send(o1);
+    return ctx;
+  }
+
+  it("settles once, however fast it is tapped, and frees the table", async () => {
+    const { fake, desk } = await served();
+    const [first, second] = await Promise.all([desk.settle(o1, [cash(26000)]), desk.settle(o1, [cash(26000)])]);
+    expect(first.ok && second.ok).toBe(true);
+    expect(fake.writes.filter((w) => w.some((c) => c.table === "orders"))).toHaveLength(2); // opened, settled
+    expect(await desk.settle(o1, [cash(26000)])).toEqual({ ok: false, error: "settled" });
+    expect(fake.current().orders[0]!.state).toEqual({
+      status: "settled",
+      settledAt: NOON,
+      bill: { subtotal: 26000, payments: [cash(26000)] },
+    });
+    expect(activeOrders(fake.current().orders, fake.current().lines)).toEqual([]);
+  });
+
+  it("refuses payments that don't match the stored dishes", async () => {
+    const { fake, desk } = await served();
+    expect(await desk.settle(o1, [cash(2000)])).toEqual({ ok: false, error: "notExact" });
+    await desk.addDish(pending("o1"), roti); // another tab adds while the bill is open
+    expect(await desk.settle(o1, [cash(26000)])).toEqual({ ok: false, error: "unsent" });
+    expect(fake.current().orders[0]!.state.status).toBe("open");
+  });
+
+  it("undoes a settle, unless the table has been taken since", async () => {
+    const { fake, desk } = await served();
+    const settled = await desk.settle(o1, [upi(20000)], { amount: paise(6000), reason: "Regular" });
+    if (!settled.ok) throw new Error(settled.error);
+    await settled.value();
+    expect(fake.current().orders[0]!.state).toEqual({ status: "open" });
+
+    const again = await desk.settle(o1, [upi(26000)]);
+    await desk.addDish(pending("next"), roti);
+    if (again.ok) await again.value();
+    expect(fake.current().orders.find((o) => o.id === "o1")!.state.status).toBe("settled");
+  });
+
+  it("locks a settled bill: no cancelling, no moving", async () => {
+    const { fake, desk } = await served();
+    await desk.settle(o1, [cash(26000)]);
+    const [line] = linesOf(fake.current(), "o1");
+    expect(await desk.voidLine(line!.id, 1)).toEqual({ ok: false, error: "settled" });
+    const t3 = await desk.addTable();
+    await desk.moveOrder(o1, t3.id);
+    expect(fake.current().orders[0]!.channel).toEqual({ type: "dineIn", tableId: t1 });
+  });
+
+  it("starts the table's next order when a dish lands on a settled one", async () => {
+    const { fake, desk } = await served();
+    await desk.settle(o1, [cash(26000)]);
+    const added = await desk.addDish(pending("o1"), roti);
+    expect(added.ok && added.value.orderId).not.toBe("o1");
+    expect(fake.current().orders).toHaveLength(2);
+    expect(linesOf(fake.current(), "o1")).toHaveLength(2);
+  });
+
+  it("takes nothing more on a paid takeaway", async () => {
+    const { desk } = await setup();
+    await desk.addDish(takeaway("tk"), roti);
+    await desk.send("tk" as OrderId);
+    await desk.settle("tk" as OrderId, [cash(2000)]);
+    expect(await desk.addDish(takeaway("tk"), roti)).toEqual({ ok: false, error: "settled" });
+  });
+
+  it("corrects the method, keeps the amount, and an undo no longer reopens it", async () => {
+    const { fake, desk } = await served();
+    const settled = await desk.settle(o1, [cash(26000)]);
+    expect(await desk.correctPayments(o1, [upi(25000)])).toEqual({ ok: false, error: "amountChanged" });
+    expect(await desk.correctPayments(o1, [cash(6000), upi(20000)])).toEqual({ ok: true, value: undefined });
+    if (settled.ok) await settled.value();
+    expect(fake.current().orders[0]!.state).toMatchObject({
+      status: "settled",
+      correctedAt: NOON,
+      bill: { payments: [cash(6000), upi(20000)] },
+    });
+  });
+});

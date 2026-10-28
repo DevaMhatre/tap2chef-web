@@ -62,6 +62,40 @@ describe("dexieOrderRepository", () => {
     expect(await db.outbox.count()).toBe(4);
   });
 
+  it("round-trips a settled bill, and an undone settle leaves no bill behind", async () => {
+    const settled: Order = {
+      ...order,
+      state: {
+        status: "settled",
+        settledAt: 200,
+        correctedAt: 300,
+        bill: {
+          subtotal: paise(4000),
+          discount: { amount: paise(500), reason: "Regular" },
+          payments: [
+            { method: "cash", amount: paise(1500) },
+            { method: "upi", amount: paise(2000) },
+          ],
+        },
+      },
+    };
+    await dexieOrderRepository.write([{ op: "put", table: "orders", record: settled }]);
+    expect((await next(TODAY, (s) => s.orders.length === 1)).orders).toEqual([settled]);
+    expect((await db.orders.get(order.id))!.status).toBe("settled");
+
+    await dexieOrderRepository.write([{ op: "put", table: "orders", record: order }]);
+    expect((await next(TODAY, (s) => s.orders[0]?.state.status === "open")).orders).toEqual([order]);
+    expect((await db.orders.get(order.id))!.state).toEqual({ status: "open" });
+  });
+
+  it("skips a settled bill with a malformed payment", async () => {
+    const meta = { tenantId: "t", createdAt: 1, updatedAt: 1, deleted: false };
+    const bill = { subtotal: 4000, payments: [{ method: "card", amount: 4000 }] };
+    await db.orders.put({ ...meta, ...order, status: "settled", state: { status: "settled", settledAt: 200, bill } });
+    await dexieOrderRepository.write([{ op: "put", table: "orders", record: { ...order, id: "o2" as OrderId } }]);
+    expect((await next(TODAY, (s) => s.orders.length > 0)).orders.map((o) => o.id)).toEqual(["o2"]);
+  });
+
   it("leaves out yesterday's out-of-stock but keeps an order still open from yesterday", async () => {
     const yesterday = "2026-10-28" as BusinessDate;
     await dexieOrderRepository.write([

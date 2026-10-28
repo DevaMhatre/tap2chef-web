@@ -5,22 +5,27 @@ import {
   activeOrders,
   addToDraft,
   businessDate,
+  correctPayments,
   nextToken,
   outOfStockId,
   outOn,
   sendDraft,
+  settle as settleOrder,
   voidSent,
   withNote,
   withQuantity,
+  type CorrectionError,
   type LineEditError,
   type LineId,
   type Order,
   type OrderId,
   type OrderLine,
   type RoundId,
+  type SettleError,
   type VoidReason,
 } from "../domain/order";
 import { err, ok, type Result } from "../domain/result";
+import type { Discount, Payment } from "../domain/settlement";
 import { isTableCount, nextTableName, numberedTables, TABLE_NAME_MAX, type DiningTable, type TableId } from "../domain/tables";
 import { applyChanges } from "./applyChanges";
 import type { Undo } from "./menuEditor";
@@ -46,7 +51,7 @@ export type OrderCommands = {
    * One more of a dish. `order` may not be stored yet: the first dish stores
    * it, so a table tapped and left leaves nothing behind.
    */
-  addDish(order: Order, dish: OrderableItem): Promise<Result<OrderLine, "outToday">>;
+  addDish(order: Order, dish: OrderableItem): Promise<Result<OrderLine, "outToday" | "settled">>;
   /**
    * One more or one fewer, planned against the stored quantity so fast taps
    * all count. Below 1 removes the line, with undo.
@@ -60,6 +65,11 @@ export type OrderCommands = {
   voidLine(lineId: LineId, quantity: number, reason?: VoidReason): Promise<Result<Undo, LineEditError>>;
   moveOrder(orderId: OrderId, tableId: TableId): Promise<Result<void, "occupied">>;
   setOutToday(itemId: ItemId, out: boolean): Promise<void>;
+
+  /** Closes the bill and frees the table. Undo reopens it, unless the table has been taken since. */
+  settle(orderId: OrderId, payments: Payment[], discount?: Discount): Promise<Result<Undo, SettleError>>;
+  /** "It was UPI, not cash." Same amount, other method. */
+  correctPayments(orderId: OrderId, payments: Payment[]): Promise<Result<void, CorrectionError>>;
 };
 
 export type OrderDesk = {
@@ -84,6 +94,22 @@ export function createOrderDesk(repository: OrderRepository, ids: IdGenerator, c
       }));
 
   const lineIn = (s: OrderSnapshot, id: LineId) => s.lines.find((l) => l.id === id);
+  const orderIn = (s: OrderSnapshot, id: OrderId) => s.orders.find((o) => o.id === id);
+  const isSettled = (s: OrderSnapshot, id: OrderId) => orderIn(s, id)?.state.status === "settled";
+
+  // Back to open, the way it was. Not if it was settled again or corrected
+  // since, nor if a new order already took its table.
+  const reopen =
+    (orderId: OrderId, settledAt: number): Undo =>
+    () =>
+      run(`reopen:${orderId}`, (s) => {
+        const current = orderIn(s, orderId);
+        const { state } = current ?? {};
+        if (!current || state?.status !== "settled" || state.settledAt !== settledAt || state.correctedAt) return nothing(undefined);
+        const { channel } = current;
+        if (channel.type === "dineIn" && activeOrderAt(channel.tableId, activeOrders(s.orders, s.lines))) return nothing(undefined);
+        return { changes: [put({ table: "orders", record: { ...current, state: { status: "open" } } })], result: undefined };
+      });
 
   function editLine<T>(
     key: string | null,
@@ -94,6 +120,8 @@ export function createOrderDesk(repository: OrderRepository, ids: IdGenerator, c
       const line = lineIn(s, lineId);
       // Gone already: removed on another tab, or this is a repeated tap.
       if (!line) return nothing(err("notDraft"));
+      // Settled on another tab while this screen was open.
+      if (isSettled(s, line.orderId)) return nothing(err("settled"));
       return edit(line, s);
     });
   }
@@ -142,13 +170,20 @@ export function createOrderDesk(repository: OrderRepository, ids: IdGenerator, c
       }),
 
     addDish: (order, dish) =>
-      run<Result<OrderLine, "outToday">>(null, (s) => {
+      run<Result<OrderLine, "outToday" | "settled">>(null, (s) => {
         const now = clock.now();
         const day = businessDate(now);
         if (outOn(s.outOfStock, day).has(dish.item.id)) return nothing(err("outToday"));
 
         const changes: OrderChange[] = [];
-        let target = s.orders.find((o) => o.id === order.id);
+        let target = orderIn(s, order.id);
+        // Settled on another tab: a dish for that table starts its next
+        // order; a takeaway token, once paid, takes nothing more.
+        if (target?.state.status === "settled") {
+          if (order.channel.type === "takeaway") return nothing(err("settled"));
+          target = undefined;
+          order = { ...order, id: ids.newId() as OrderId };
+        }
         // Another tab may have opened this table since the screen did.
         if (!target && order.channel.type === "dineIn") {
           target = activeOrderAt(order.channel.tableId, activeOrders(s.orders, s.lines))?.order;
@@ -227,8 +262,10 @@ export function createOrderDesk(repository: OrderRepository, ids: IdGenerator, c
 
     moveOrder: (orderId, tableId) =>
       run<Result<void, "occupied">>(`moveOrder:${orderId}`, (s) => {
-        const order = s.orders.find((o) => o.id === orderId);
-        if (!order || order.channel.type !== "dineIn" || order.channel.tableId === tableId) return nothing(ok(undefined));
+        const order = orderIn(s, orderId);
+        if (!order || order.state.status !== "open" || order.channel.type !== "dineIn" || order.channel.tableId === tableId) {
+          return nothing(ok(undefined));
+        }
         if (activeOrderAt(tableId, activeOrders(s.orders, s.lines))) return nothing(err("occupied"));
         const record: Order = { ...order, channel: { type: "dineIn", tableId } };
         return { changes: [put({ table: "orders", record })], result: ok(undefined) };
@@ -242,6 +279,28 @@ export function createOrderDesk(repository: OrderRepository, ids: IdGenerator, c
         if (out === Boolean(existing)) return nothing(undefined);
         const record = existing ?? { id, itemId, businessDate: day };
         return { changes: [(out ? put : remove)({ table: "outOfStock", record })], result: undefined };
+      }),
+
+    settle: (orderId, payments, discount) =>
+      // Keyed: a double tap on Cash settles once and both taps see the same answer.
+      run<Result<Undo, SettleError>>(`settle:${orderId}`, (s) => {
+        const order = orderIn(s, orderId);
+        if (!order) return nothing(err("empty"));
+        // Planned against the stored lines, not the screen's: a dish added on
+        // another tab since makes the payments fall short, and the sheet says so.
+        const at = clock.now();
+        const settled = settleOrder(order, s.lines, payments, discount, at);
+        if (!settled.ok) return nothing(settled);
+        return { changes: [put({ table: "orders", record: settled.value })], result: ok(reopen(orderId, at)) };
+      }),
+
+    correctPayments: (orderId, payments) =>
+      run<Result<void, CorrectionError>>(`correctPayments:${orderId}`, (s) => {
+        const order = orderIn(s, orderId);
+        if (!order) return nothing(err("notSettled"));
+        const corrected = correctPayments(order, payments, clock.now());
+        if (!corrected.ok) return nothing(corrected);
+        return { changes: [put({ table: "orders", record: corrected.value })], result: ok(undefined) };
       }),
   };
 

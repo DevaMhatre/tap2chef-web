@@ -9,10 +9,12 @@ import type {
   OrderChannel,
   OrderId,
   OrderLine,
+  OrderState,
   OutOfStock,
   RoundId,
   VoidReason,
 } from "../../domain/order";
+import type { Bill, Discount, Payment } from "../../domain/settlement";
 import type { DiningTable, TableId } from "../../domain/tables";
 import type { OrderChange, OrderRecord, OrderRepository, OrderSnapshot } from "../../usecases/ports";
 import { db, type StoredRecord, type SyncedTable } from "./db";
@@ -46,24 +48,61 @@ function toChannel(value: unknown): OrderChannel | undefined {
   return undefined;
 }
 
-// The order's state is stored flat as `status`, so open orders can be read
-// by index.
+function toPayment(value: unknown): Payment | undefined {
+  if (!isObject(value) || !isPaise(value.amount) || value.amount === 0) return undefined;
+  const amount = value.amount as Paise;
+  if (value.method === "cash") return { method: "cash", amount };
+  if (value.method !== "upi") return undefined;
+  if (value.ref !== undefined && !isText(value.ref)) return undefined;
+  return { method: "upi", amount, ...(value.ref !== undefined && { ref: value.ref }) };
+}
+
+function toDiscount(value: unknown): Discount | undefined {
+  if (!isObject(value) || !isPaise(value.amount) || typeof value.reason !== "string") return undefined;
+  return { amount: value.amount as Paise, reason: value.reason };
+}
+
+function toBill(value: unknown): Bill | undefined {
+  if (!isObject(value) || !isPaise(value.subtotal) || !Array.isArray(value.payments)) return undefined;
+  const payments = value.payments.map(toPayment);
+  if (payments.some((p) => !p)) return undefined;
+  const discount = value.discount === undefined ? undefined : toDiscount(value.discount);
+  if (value.discount !== undefined && !discount) return undefined;
+  return { subtotal: value.subtotal as Paise, ...(discount && { discount }), payments: payments as Payment[] };
+}
+
+// `status` is also stored flat, so open orders can be read by index. The
+// state itself is one field, replaced whole: an undone settle leaves no bill behind.
+function toOrderState(status: unknown, value: unknown): OrderState | undefined {
+  if (status === "open") return { status: "open" };
+  if (status !== "settled" || !isObject(value) || !isTime(value.settledAt)) return undefined;
+  const bill = toBill(value.bill);
+  if (!bill || (value.correctedAt !== undefined && !isTime(value.correctedAt))) return undefined;
+  return {
+    status: "settled",
+    settledAt: value.settledAt,
+    bill,
+    ...(value.correctedAt !== undefined && { correctedAt: value.correctedAt }),
+  };
+}
+
 function toOrder(r: StoredRecord): Order | undefined {
   const channel = toChannel(r.channel);
   if (!channel || !isText(r.profileId) || !isDate(r.businessDate) || !isTime(r.openedAt)) return undefined;
-  if (r.status !== "open") return undefined;
+  const state = toOrderState(r.status, r.state);
+  if (!state) return undefined;
   return {
     id: r.id as OrderId,
     channel,
     profileId: r.profileId as ProfileId,
     businessDate: r.businessDate as BusinessDate,
     openedAt: r.openedAt,
-    state: { status: "open" },
+    state,
   };
 }
 
-function fromOrder({ state, ...order }: Order) {
-  return { ...order, status: state.status };
+function fromOrder(order: Order) {
+  return { ...order, status: order.state.status };
 }
 
 function toLineState(value: unknown): LineState | undefined {
