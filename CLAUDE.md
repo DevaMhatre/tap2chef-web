@@ -126,12 +126,14 @@ of what?"** Modules exist to isolate change.
 - Money is whole **paise** (`Paise` in `src/domain/money.ts`). Never floats.
 - An order line **snapshots item name and price** when ordered. Menu edits never
   change past bills.
-- Order status only moves forward: draft → cooking → served → settled.
+- Status only moves forward, per line: draft → sent → voided (a sent dish is
+  cancelled, never deleted). The order itself is open → settled. Round numbers
+  and "table occupied" are derived, never stored.
 - A bill settles only when payments sum **exactly** to the total.
 - Every record belongs to an account; shop-level records also belong to a shop.
 
 ### Tap2Chef variation points
-- Order channel: `{ type: 'dineIn'; table } | { type: 'takeaway'; token }` (delivery later = new arm).
+- Order channel: `{ type: 'dineIn'; tableId } | { type: 'takeaway'; token }` (delivery later = new arm).
 - Payment: `{ method: 'cash'; amount } | { method: 'upi'; amount; ref? }` — a list, so bills can split.
 - Storage: Dexie today, server sync later — behind ports.
 - Printing: Web Bluetooth / print dialog / WhatsApp share — behind one port.

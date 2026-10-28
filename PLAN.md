@@ -62,16 +62,15 @@ A feature is marked `[x]` only when **all** of these hold:
 - [ ] Verified on a real iPhone: sheets rise above the keyboard
 - [ ] Owner test: the restaurant owner types 10 real dishes unaided
 
-### 5. Table grid and orders — **next**
-To be broken into features at the step-5 brainstorm. Already decided (see
-*Decisions*): channel picks the price list, line snapshot timing, availability
-record. Known pieces:
-- [ ] Order read model over `menuFor(...)` (a `useMenu`-style use case)
-- [ ] Table grid; dine-in and takeaway orders
-- [ ] Fire → cooking → served
-- [ ] "Out today" availability toggle on the order screen
+### 5. Table grid and orders ✓ (pending owner test)
+- [x] 5a Domain contract: lines as records, per-line status, rounds, voids, business date, tokens, out today — `e60010c`
+- [x] 5b Tables: one-question setup, floor grid (free / owes ₹ / waited since last round / unsent dot), edit sheet — `e501b07`, `52c906a`
+- [x] 5c Order screen: search (words + initials), category chips, one-tap add, cart, notes, Send; price list per channel — `e501b07`, `52c906a`
+- [x] 5d Takeaway with daily tokens; Orders tab with "Still open from yesterday" — `e501b07`, `52c906a`
+- [x] 5e Cancel a sent dish (part or all, optional reason, undo); move an order to a free table — `e501b07`, `52c906a`
+- [ ] Owner test: the restaurant runs one real lunch on it
 
-### 6. Bill settlement
+### 6. Bill settlement — **next** (a table frees only when its bill settles)
 - [ ] Cash / UPI split; settles only when payments sum exactly to the total
 
 ### 7. Expenses and the day's dashboard
@@ -115,10 +114,24 @@ Newest change first within each group. Format: decision — reason (date).
 - Deleting a category takes its dishes with it, with undo; the last price list can't be removed (2026-10-29).
 - Drag-to-reorder deferred: dishes appear in typing order, which follows the printed menu (2026-10-29).
 
-### Orders (decided ahead of step 5)
-- An order picks its price list from its channel (dine-in → Dine-In, takeaway → Takeaway, owner-named lists like Bulk) (2026-10-29).
-- An order line snapshots the display name and resolved price when it is **added to the draft**, not at fire or settle — a price change mid-meal never changes the cart (2026-10-29).
-- "Out of stock" is its own record `{ itemId, businessDate }`, never a field on the item — last-write-wins would clobber price edits; it resets daily by date key with no reset job; business date has a cutoff (default 4 am); the toggle lives on the order screen (2026-10-29).
+### Orders
+Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one removes an option rather than adding a setting.
+- Order lines are records of their own, not an array on the order — two devices adding to one table merge under last-write-wins instead of overwriting (2026-10-29).
+- Status lives on the line (draft → sent → voided); the order is open → settled; "served" dropped — tables order in rounds, and small kitchens track serving by voice (2026-10-29).
+- One **Send** button, no Hold/Stay, no course setup: unsent dishes are the hold, each Send is a round — Toast needs three buttons and course config for the same thing (2026-10-29).
+- Round numbers come from send time, never a stored counter — two offline devices would both send "round 2" (2026-10-29).
+- Send returns to the floor (Tables / Orders); the tile showing the new total is the confirmation (2026-10-29).
+- A sent dish is cancelled, never deleted: one tap + undo, reason optional, kept for the day's numbers — Petpooja forces reason + approver; honesty by visibility, not friction. Approver comes with staff PINs (2026-10-29).
+- Cancelling with reason "Out of stock" also marks the dish out today — the two are one problem (2026-10-29).
+- An order is stored with its first dish, not when the table is tapped; an order with no live line frees its table — no ghost tables (2026-10-29).
+- Tables: setup is "How many tables?", numbered 1…n; no floor plan, areas or merging — the owner knows where table 4 is (2026-10-29).
+- The floor shows time since the **last round was sent**, not since seating, with no thresholds to configure (2026-10-29).
+- Takeaway is an order with a daily token (max + 1, never reused), no New/Accepted/Done stages; token taken when the order is stored (2026-10-29).
+- Price list: an order starts on the list named for its channel ("Takeaway", "Parcel"), else the first; it can switch only before its first dish; no channel setting, and a one-off Bulk order never becomes the default (2026-10-29).
+- A line snapshots name and price when it is **added to the draft**, not at send or settle — a price change mid-meal never changes the cart (2026-10-29).
+- "Out of stock" is its own record `{ itemId, businessDate }` with id `itemId@date`, never a field on the item; resets by date, no job; business day starts at 4 am (2026-10-29).
+- Open orders from an earlier business day are listed first under "Still open from yesterday" — never silently lost (2026-10-29).
+- Phones and tablets in portrait: the order is a bar under the thumb with Send on it; from 1024px the ticket sits beside the menu (2026-10-29).
 
 ### Design
 - Sheet actions: a **filled** pill commits (Save, Add), a **tinted** pill closes (Done), plain text leaves (Cancel) — never two filled buttons competing (2026-10-29).
@@ -132,6 +145,10 @@ Newest change first within each group. Format: decision — reason (date).
 ## Open questions
 
 **For the restaurant owner**
+- How does an order reach the kitchen today (shouted, paper KOT, the waiter walks in)? → decides what Send produces before printing (step 9).
+- Do you change or cancel something after the kitchen has it? How often, and who decides?
+- Do customers move tables, or split one table's bill?
+- Takeaway: do you call out a token number, a name, or both?
 - Do you sell anything as half / full (or small / large)? → decides the `portions` pricing arm.
 - When a dish runs out mid-service, how do you tell the staff today? → shapes the availability toggle.
 
@@ -141,6 +158,8 @@ Newest change first within each group. Format: decision — reason (date).
 
 **Known gaps**
 - `useSyncStatus` / `useDeviceStorage` import `dexie-react-hooks` in the use-case layer — move behind subscribe-style ports.
+- Two devices opening the same table offline make two orders; the earliest is shown, the other is hidden until a merge exists (needs sync first).
+- Send has no kitchen output yet: no KOT print or kitchen screen until step 9 / sync.
 - The shell defaults to Node 20; the project needs Node 22 (`nvm use`), or the jsdom tests fail to start.
 
 ---
@@ -148,3 +167,4 @@ Newest change first within each group. Format: decision — reason (date).
 ## Log
 
 - **2026-10-29** — Steps 1–3 scaffolded. Step 4 menu builder brainstormed (prototype studied, SaaS research), built in four layers, verified in Chrome at four sizes, phone-tested once and polished. North Star, Product Test and this plan established.
+- **2026-10-29** — Step 5 brainstormed against Toast / Square / Petpooja / Lightspeed, built in four layers (5a–5e), checked in Chrome at 360 / 820 / 1180 / 1440 in light and dark, and offline. Fixed on the way: one sheet handing over to another closed both.
