@@ -70,11 +70,11 @@ A feature is marked `[x]` only when **all** of these hold:
 - [x] 5e Cancel a sent dish (part or all, optional reason, undo); move an order to a free table — `e501b07`, `52c906a`
 - [ ] Owner test: the restaurant runs one real lunch on it
 
-### 6. Bill settlement — **next** (a table frees only when its bill settles)
+### 6. Bill settlement ✓ (6d after the owner test) (a table frees only when its bill settles)
 Brainstormed 2026-10-29 against Toast, Square and Petpooja. The discount is in; 6d waits for the owner test.
 - [x] 6a Domain: `settled` arm on the order state (payments + optional adjustment), exact-sum rule, payment-method correction — `cf54125`
 - [x] 6b Bill sheet: primary button is Send while anything is unsent, then Settle; one-tap Cash / UPI for the full amount; Split = type cash, UPI fills the rest (sum is exact by construction); cash change chips (₹900 · ₹1000 · ₹2000 → "Change ₹110"); adjust by typing the final amount ("make it ₹850"), recorded as a discount with optional reason, only downward — `6c6422f`, `0b344ad`, `abfa74c`
-- [ ] 6c Orders tab: "Settled today" with the day's total; a settled bill never reopens (undo within 5 s only), but its payment method can be corrected
+- [x] 6c Orders tab: "Settled today" with the day's total; a settled bill never reopens (undo within 5 s only), but its payment method can be corrected — `681c009`, `de83682`, `d9be4fb`
 - [ ] 6d UPI QR with the exact amount, drawn on the device from the owner's UPI ID, offline, no gateway; staff tap "Received". **After the owner test.**
 
 Said no to: split by seat / by item / evenly (several payments per bill covers it), promotions engine, reopening a settled bill.
@@ -150,6 +150,9 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 - A settle is checked against the stored dishes, not the screen's: if another tab changed the bill, it refuses and says so rather than charging for what staff didn't see (2026-10-29).
 - Undoing a settle does nothing once the table has a new order or the payment was corrected (2026-10-29).
 - A paid takeaway's link shows "Token N is paid"; a dish tapped onto a table settled elsewhere starts the table's next order (2026-10-29).
+- "Settled today" shows the total with cash and UPI under it — the cash box check at closing; the full day's numbers stay step 7 (2026-10-29).
+- A paid bill counts on its order's business day, like its token; one left open overnight belongs to the evening it was served (2026-10-29).
+- A corrected bill says "corrected" in the list and when, in the sheet (2026-10-29).
 - Change chips: next ₹50 (bills under ₹1000), ₹100, ₹500, ₹1000, ₹2000 above the amount due, first three (2026-10-29).
 
 ### Design
@@ -181,6 +184,7 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 **Known gaps**
 - `useSyncStatus` / `useDeviceStorage` import `dexie-react-hooks` in the use-case layer — move behind subscribe-style ports.
 - Two devices opening the same table offline make two orders; the earliest is shown, the other is hidden until a merge exists (needs sync first).
+- A bill opened yesterday and settled today drops out of view (the device loads today's orders and open ones only); it counts as yesterday's, but nothing shows yesterday yet — step 7.
 - Send has no kitchen output yet: no KOT print or kitchen screen until step 9 / sync.
 - The shell defaults to Node 20; the project needs Node 22 (`nvm use`), or the jsdom tests fail to start.
 
@@ -192,3 +196,4 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 - **2026-10-29** — Step 5 brainstormed against Toast / Square / Petpooja / Lightspeed, built in four layers (5a–5e), checked in Chrome at 360 / 820 / 1180 / 1440 in light and dark, and offline. Fixed on the way: one sheet handing over to another closed both.
 - **2026-10-29** — Step 5 committed on branch `step-5-orders` (5 commits, each typechecks and passes tests). Step 6 brainstormed; proposal and two open choices recorded above.
 - **2026-10-29** — 6a committed (`cf54125`). 6b built in four layers, checked in Chrome at 360 / 820 / 1440 in light and dark and offline; double-tap settles once, undo reopens.
+- **2026-10-29** — 6b committed. 6c built: Settled today with takings by drawer, paid-bill sheet, payment correction; checked at 360 / 820 / 1440 light and dark.
