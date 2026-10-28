@@ -6,6 +6,10 @@ Read at the start of every session. These are non-negotiable defaults.
 done, what was decided and what is open. Update it whenever a feature passes
 the definition of done or a decision is made or changed.
 
+**Then read [`LEARNINGS.md`](LEARNINGS.md)** — mistakes we made once and how
+we avoid them. Run its checklist before every feature; add an entry whenever
+something goes wrong (a rework, a bug caught late, a correction).
+
 ---
 
 ## Product

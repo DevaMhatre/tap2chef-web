@@ -35,7 +35,9 @@ A feature is marked `[x]` only when **all** of these hold:
 ## How to use this file
 
 - **Start of every session:** read `CLAUDE.md`, then this file, then
-  `git log --oneline -10`.
+  `LEARNINGS.md`, then `git log --oneline -10`.
+- **Something went wrong** (a rework, a late bug, a correction): add the
+  lesson to `LEARNINGS.md`.
 - **A feature passes the definition of done:** tick it and add the commit hash.
 - **A decision is made or changed:** edit its line in *Decisions* (don't add a
   second one); keep the date of the latest change and the one-line reason.
@@ -70,12 +72,14 @@ A feature is marked `[x]` only when **all** of these hold:
 - [x] 5e Cancel a sent dish (part or all, optional reason, undo); move an order to a free table — `e501b07`, `52c906a`
 - [ ] Owner test: the restaurant runs one real lunch on it
 
-### 6. Bill settlement ✓ (6d after the owner test) (a table frees only when its bill settles)
+### 6. Bill settlement — 6g, polish and 6f open; 6d after the owner test (a table frees only when its bill settles)
 Brainstormed 2026-10-29 against Toast, Square and Petpooja. The discount is in; 6d waits for the owner test.
 - [x] 6a Domain: `settled` arm on the order state (payments + optional adjustment), exact-sum rule, payment-method correction — `cf54125`
 - [x] 6b Bill sheet (first version, one-tap Cash / UPI) — `6c6422f`, `0b344ad`, `abfa74c`
 - [x] 6c Settled today, payment correction (first version) — `681c009`, `de83682`, `d9be4fb`
 - [x] 6e **Bill first, then money** (rework of 6b/6c after a real-life walkthrough): Send → **Bill** (table turns amber, "Bill · 4 min", Tables shows "₹… waiting to be paid") → bill sheet: choose Cash or UPI (nothing preselected), amount pre-filled with what's left, one **Settle ₹X** button (or **Received ₹X** for a part) → a completion moment over the floor → Undo. Payments are records; part payments add up; a ₹0 bill has Close bill. Settled today is one summary row → its own screen; each payment's method can be corrected — `73ee9e4`
+- [ ] 6g Remove a wrong payment after Undo has gone (two devices took the whole bill, or ₹600 typed for ₹60); the bill stays marked as changed
+- [ ] Polish: the desktop order panel shows the discount and what is still due, not only the dishes' total
 - [ ] 6f Menu: collapsible categories on the Menu tab (4+ categories start collapsed; jump chips go); the order screen stays fully open
 - [ ] 6d UPI QR with the exact amount, drawn on the device from the owner's UPI ID, offline, no gateway; staff tap "Received". **After the owner test.**
 
