@@ -2,6 +2,7 @@ import { normalizeName, unitPrice, type Diet, type Id, type ItemId, type MenuPro
 import { addPaise, multiplyPaise, type Paise } from "./money";
 import { sortByOrder } from "./ordering";
 import { err, ok, type Result } from "./result";
+import { amountPaid, validateBill, type Bill, type BillError, type Discount, type Payment } from "./settlement";
 import type { DiningTable, TableId } from "./tables";
 
 export type OrderId = Id<"OrderId">;
@@ -36,8 +37,11 @@ export function dayBefore(day: BusinessDate): BusinessDate {
 export type OrderChannel = { type: "dineIn"; tableId: TableId } | { type: "takeaway"; token: number };
 export type ChannelType = OrderChannel["type"];
 
-// One arm today. Bill settlement adds `settled` with its payments.
-export type OrderState = { status: "open" };
+export type OrderState =
+  | { status: "open" }
+  // Final: a settled bill never reopens. Only how it was paid can be
+  // corrected, and a correction stays visible.
+  | { status: "settled"; settledAt: number; bill: Bill; correctedAt?: number };
 
 export type Order = {
   id: OrderId;
@@ -167,6 +171,47 @@ export function voidSent(
     { ...line, quantity: line.quantity - quantity },
     { ...line, id: newId, quantity, state: voided },
   ]);
+}
+
+// ---------------------------------------------------------------- settling
+
+export type SettleError = "settled" | "unsent" | "empty" | BillError;
+
+/**
+ * Closes the bill and frees the table. Everything must have gone to the
+ * kitchen first: a dish still in the cart is either forgotten or not wanted,
+ * and only the staff can say which.
+ */
+export function settle(
+  order: Order,
+  lines: readonly OrderLine[],
+  payments: Payment[],
+  discount: Discount | undefined,
+  at: number,
+): Result<Order, SettleError> {
+  if (order.state.status !== "open") return err("settled");
+  const own = lines.filter((l) => l.orderId === order.id);
+  if (own.some((l) => l.state.status === "draft")) return err("unsent");
+  if (!own.some(isLive)) return err("empty");
+
+  const bill = validateBill({ subtotal: orderTotal(own), ...(discount && { discount }), payments });
+  if (!bill.ok) return bill;
+  return ok({ ...order, state: { status: "settled", settledAt: at, bill: bill.value } });
+}
+
+export type CorrectionError = "notSettled" | "amountChanged" | BillError;
+
+/**
+ * "It was UPI, not cash." The method can change; the amount can't, so a
+ * correction never moves the day's total, only which drawer it is in.
+ */
+export function correctPayments(order: Order, payments: Payment[], at: number): Result<Order, CorrectionError> {
+  if (order.state.status !== "settled") return err("notSettled");
+  const { bill } = order.state;
+  if (amountPaid(payments) !== amountPaid(bill.payments)) return err("amountChanged");
+  const corrected = validateBill({ ...bill, payments });
+  if (!corrected.ok) return corrected;
+  return ok({ ...order, state: { ...order.state, bill: corrected.value, correctedAt: at } });
 }
 
 // ---------------------------------------------------------------- the ticket
