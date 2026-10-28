@@ -72,14 +72,14 @@ A feature is marked `[x]` only when **all** of these hold:
 - [x] 5e Cancel a sent dish (part or all, optional reason, undo); move an order to a free table — `e501b07`, `52c906a`
 - [ ] Owner test: the restaurant runs one real lunch on it
 
-### 6. Bill settlement — 6g, polish and 6f open; 6d after the owner test (a table frees only when its bill settles)
+### 6. Bill settlement — 6f open; 6d after the owner test (a table frees only when its bill settles)
 Brainstormed 2026-10-29 against Toast, Square and Petpooja. The discount is in; 6d waits for the owner test.
 - [x] 6a Domain: `settled` arm on the order state (payments + optional adjustment), exact-sum rule, payment-method correction — `cf54125`
 - [x] 6b Bill sheet (first version, one-tap Cash / UPI) — `6c6422f`, `0b344ad`, `abfa74c`
 - [x] 6c Settled today, payment correction (first version) — `681c009`, `de83682`, `d9be4fb`
 - [x] 6e **Bill first, then money** (rework of 6b/6c after a real-life walkthrough): Send → **Bill** (table turns amber, "Bill · 4 min", Tables shows "₹… waiting to be paid") → bill sheet: choose Cash or UPI (nothing preselected), amount pre-filled with what's left, one **Settle ₹X** button (or **Received ₹X** for a part) → a completion moment over the floor → Undo. Payments are records; part payments add up; a ₹0 bill has Close bill. Settled today is one summary row → its own screen; each payment's method can be corrected — `73ee9e4`
-- [ ] 6g Remove a wrong payment after Undo has gone (two devices took the whole bill, or ₹600 typed for ₹60); the bill stays marked as changed
-- [ ] Polish: the desktop order panel shows the discount and what is still due, not only the dishes' total
+- [x] 6g Remove a wrong payment after Undo has gone (two devices took the whole bill, or a typo); it stays listed, struck through — `c2c9b67`
+- [x] Polish: the desktop order panel shows the discount, what's paid and what's still to pay — `c2c9b67`
 - [ ] 6f Menu: collapsible categories on the Menu tab (4+ categories start collapsed; jump chips go); the order screen stays fully open
 - [ ] 6d UPI QR with the exact amount, drawn on the device from the owner's UPI ID, offline, no gateway; staff tap "Received". **After the owner test.**
 
@@ -159,6 +159,7 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 - "Round off or discount", never "Change amount": "change" already means the cash handed back. A discount agreed with a part payment stays agreed when the sheet reopens (2026-10-29).
 - A payment is checked against the stored dishes and payments, not the screen's: if another tab changed the bill, it refuses and says so rather than charging for what staff didn't see (2026-10-29).
 - Undo takes a payment back and reopens the bill it closed — not once the table has a new order (2026-10-29).
+- A wrong payment is removed, never deleted: it stays listed, struck through, and stops counting. While the bill is open any payment can go; on a settled bill only an excess can, so it stays exact and never reopens. A "UPI received" that never arrived after the guest left is a loss to see in the day's numbers, not a reopened bill (2026-10-29).
 - A paid takeaway's link shows "Token N is paid"; a dish tapped onto a table settled elsewhere starts the table's next order (2026-10-29).
 - "Settled today" is one summary row (total, cash, UPI) that opens its own screen — the Orders tab keeps only live work; Apple uses drill-in for history and disclosure only for details (2026-10-29).
 - A paid bill counts on its order's business day, like its token; one left open overnight belongs to the evening it was served (2026-10-29).

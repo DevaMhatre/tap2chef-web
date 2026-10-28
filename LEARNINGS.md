@@ -78,7 +78,8 @@ wrong and how we now avoid it**.
 - *What happened:* "Bill · Just now" was cut off on a 360px table tile, and
   "corrected" was cut off in a list row.
 - *Apply:* read the 360px screenshots for ellipses. Prefer shorter words over
-  smaller text.
+  smaller text, and put what needs attention first ("₹410 extra · Cash + UPI"),
+  so that if anything gets cut, it's the least important part.
 
 ## Data and state
 
