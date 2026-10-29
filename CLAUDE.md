@@ -316,13 +316,11 @@ cd server && npm test           # jest + supertest, in-memory Mongo
 Before reporting work complete: typecheck, lint, tests and build all pass.
 
 **Deploy** (live at https://tap2chef.devamhatre.com, nginx on the owner's VPS):
-build, then publish `client/dist` as the `site` branch on GitHub (a fresh
-one-commit branch, force-pushed). The owner runs this in the VPS browser
-terminal; no server keys live on the dev machine (it is a company laptop):
-
-```bash
-rm -rf /var/www/tap2chef.new && mkdir -p /var/www/tap2chef.new && curl -fsSL https://github.com/DevaMhatre/tap2chef-web/archive/refs/heads/site.tar.gz | tar -xz -C /var/www/tap2chef.new --strip-components=1 && test -f /var/www/tap2chef.new/index.html && rm -rf /var/www/tap2chef && mv /var/www/tap2chef.new /var/www/tap2chef && echo deployed
-```
+automatic. A push to `main` runs CI; only when every check passes does the
+`deploy` job publish `client/dist` as the `site` branch. The VPS checks that
+branch every 5 minutes (`/root/tap2chef-update.sh`, cron) and installs a new
+build. No keys anywhere. Log: `/var/log/tap2chef-deploy.log`; the live
+version is at `/.deployed`.
 
 ---
 

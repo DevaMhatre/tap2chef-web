@@ -169,7 +169,7 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 - No change chips (cashiers count change in their heads): staff type the cash received and the change shows; UPI is exact (2026-10-29).
 
 ### Hosting
-- Tap2Chef is a static PWA served by nginx at `tap2chef.devamhatre.com` on the owner's VPS, with its own Let's Encrypt certificate; the built app is published as the `site` branch and pulled by the server — no build tools or keys on the server, no server keys on the (company) dev laptop (2026-10-29).
+- Tap2Chef is a static PWA served by nginx at `tap2chef.devamhatre.com` on the owner's VPS, with its own Let's Encrypt certificate; a push to `main` that passes CI publishes the `site` branch, and the server installs it within 5 minutes — no build tools or keys on the server, no server keys on the (company) dev laptop (2026-10-29).
 - The owner's sites moved from devamhatre.cloud (expires 2026-11-11) to devamhatre.com, each with its own certificate (never one shared with .cloud, whose renewal will fail after expiry); .cloud 301-redirects until then; portfolio, POS and Tap2Chef all live on .com, and Google Search Console has the change of address (2026-10-29).
 
 ### Design

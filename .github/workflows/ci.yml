@@ -44,3 +44,43 @@ jobs:
       - run: npm run lint
       - run: npm test
       - run: npm run build
+
+      - name: Keep the build for deploy
+        if: github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: site
+          path: client/dist
+          include-hidden-files: true
+          retention-days: 7
+
+  # Only what passed every check goes live. The built app is published as the
+  # `site` branch (one fresh commit each time); the VPS checks that branch
+  # every few minutes and installs a new build. No keys anywhere: this job
+  # uses GitHub's own token, the server only reads a public repo.
+  deploy:
+    name: Publish site
+    needs: [server, client]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: deploy
+      cancel-in-progress: true
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: site
+          path: site
+
+      - name: Push to the site branch
+        working-directory: site
+        run: |
+          test -f index.html
+          git init -q -b site
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "site: built app from main ${GITHUB_SHA::7}"
+          git push -q --force "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" site
