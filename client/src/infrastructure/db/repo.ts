@@ -46,7 +46,9 @@ export type RecordWrite = { table: SyncedTable; record: { id: string }; op: "put
 
 /**
  * Writes a batch atomically: every record and its outbox entry, or nothing.
- * Merges over the stored row so sync metadata (createdAt) survives edits.
+ * A record replaces the stored row whole; only createdAt survives from it. A
+ * merge would keep a field the new record no longer has (an undone removal
+ * would stay removed).
  */
 export async function writeAll(writes: readonly RecordWrite[]): Promise<void> {
   // Read outside the transaction: `meta` is not one of its tables.
@@ -56,7 +58,7 @@ export async function writeAll(writes: readonly RecordWrite[]): Promise<void> {
   await db.transaction("rw", [...tables, db.outbox], async () => {
     for (const { table, record, op } of writes) {
       const existing = await db[table].get(record.id);
-      await save(table, { ...existing, ...record, tenantId, deleted: op === "remove" });
+      await save(table, { createdAt: existing?.createdAt, ...record, tenantId, deleted: op === "remove" });
     }
   });
 }

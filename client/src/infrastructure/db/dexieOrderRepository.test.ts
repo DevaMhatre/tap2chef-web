@@ -134,4 +134,14 @@ describe("dexieOrderRepository", () => {
     const s = await next(TODAY, (s) => s.lines.length > 0);
     expect(s.lines.map((l) => l.id)).toEqual(["good"]);
   });
+
+  it("counts a payment again once its removal is undone", async () => {
+    const payment: Payment = { id: "p9" as PaymentId, orderId: order.id, amount: paise(500), receivedAt: 100, method: "cash" };
+    await dexieOrderRepository.write([
+      { op: "put", table: "orders", record: order },
+      { op: "put", table: "payments", record: { ...payment, removedAt: 200 } },
+    ]);
+    await dexieOrderRepository.write([{ op: "put", table: "payments", record: payment }]);
+    expect((await next(TODAY, (s) => s.payments.length === 1)).payments).toEqual([payment]);
+  });
 });
