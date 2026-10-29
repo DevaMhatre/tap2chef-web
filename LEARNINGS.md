@@ -24,7 +24,7 @@ wrong and how we now avoid it**.
 3. Name every control by what it does. A choice only chooses; a commit is a
    button that says what it will do. (Design 1)
 4. Check every word on screen against the others on the same screen. (Design 2)
-5. Before calling it done, run the end-to-end browser script at 360 / 820 /
+5. Before calling it done, run the end-to-end browser scripts in `e2e/` at 360 / 820 /
    1440, light and dark, and read every screenshot. (Process 1)
 
 ---
@@ -117,6 +117,10 @@ wrong and how we now avoid it**.
   another tab changed the bill, refuse and say so rather than charge for
   what staff didn't see.
 
+**5. A store that merges hides a field the new record no longer has** (2026-10-29)
+- *What happened:* `writeAll` merged each record over the stored row. Undo of a removed payment (6g) put back a record without `removedAt`, the merge kept the old `removedAt`, and the payment stayed removed. Unit tests used the fake repository, which replaces, so they passed. Found by the expenses browser run.
+- *Apply:* a write replaces the row whole (only `createdAt` survives). Every adapter gets a round-trip test for "set, then unset" on any optional field. Fakes must behave like the real store on exactly the point under test.
+
 ## UI mechanics
 
 **1. Anything that must outlive a screen lives above all screens** (2026-10-29)
@@ -141,6 +145,8 @@ wrong and how we now avoid it**.
   sizes, light and dark, and every screenshot gets read. "Tests pass" is not
   done.
 
+**1b. The browser scripts live in the repo** (2026-10-29): `e2e/` (`day.mjs`, `bill2.mjs`, `menu.mjs`; see its package.json). Extend them with each feature; after any change to shared storage, re-run all of them, not just the new one.
+
 **2. A test fixture must fail loudly** (2026-10-29)
 - *What happened:* A fixture fell back to a default when its setup failed,
   which hid a wrong amount.
@@ -156,7 +162,11 @@ wrong and how we now avoid it**.
   restore automatically on failure, and make scripts safe to rerun. One
   command per line in `set -Eeuo pipefail` scripts.
 
-**4. Tooling traps**
+**4. Screenshots need a settled screen** (2026-10-29)
+- *What happened:* The first screenshots caught a sheet half risen and a sidebar tab mid-fade, which looked like bugs.
+- *Apply:* wait ~500 ms before every screenshot. Seed test data by writing straight into IndexedDB; a screen opened after the write sees it (Dexie live queries don't notice raw writes).
+
+**5. Tooling traps**
 - The shell defaults to Node 20; the project needs Node 22 (`nvm use`), or
   the jsdom tests won't start.
 - zsh doesn't split `$var` into words: use `${=args}` in loops that pass

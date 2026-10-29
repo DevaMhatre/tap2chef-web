@@ -85,10 +85,16 @@ Brainstormed 2026-10-29 against Toast, Square and Petpooja. The discount is in; 
 
 Said no to: split by seat / by item / evenly (several payments per bill covers it), promotions engine, reopening a settled bill.
 
-### 7. Expenses and the day's dashboard — **next** (starts in a new session)
-Start with `LEARNINGS.md`'s checklist: walk how the owner pays and records expenses today (cash from the drawer? a notebook?), then the market, then our call. Expenses are records of their own (two devices). The day's numbers must also show a bill opened yesterday and settled today, and any payment removed after settling.
-- [ ] Daily expenses (cash / UPI)
-- [ ] The day's numbers
+### 7. Expenses and the day's numbers ✓ (7a–7c done; pending owner test; not yet committed)
+Brainstormed 2026-10-29 (cash from the drawer, a notebook or WhatsApp, the midnight question "did the cash match?"; Toast/Square paid-out and variance, Petpooja expense module). Built in four layers, browser-checked at 360 / 820 / 1440 in light and dark.
+- [x] 7a Expenses: record of its own (amount, Cash/UPI, note, business day); two-tap entry sheet with learned note chips; Today / Yesterday; remove (struck through, Undo); list by day
+- [x] 7b The day's numbers (Today tab): Sales by drawer, Spent, Left, "Cash for the drawer", "Worth a look" (not paid yet, cancelled, discounts, removed and corrected payments), Sold most; step back through earlier days
+- [ ] Owner test: the restaurant notes a real day's expenses and checks the drawer figure against the cash box
+- [x] 7c Cash drawer: state what it started with and count it at closing; "Should hold" = start + cash taken − cash spent, then Matches / Short / Over; yesterday's count carries in as today's start; shown even before the first sale
+
+Browser scripts now live in `e2e/`. Replacing a drawer count has Undo.
+
+Said no to: categories, vendors, receipts and photos, recurring expenses, editing an amount (remove and re-add), profit by dish, shifts and drawer sessions, taking cash out for the bank as its own record.
 
 ### 8. Accounts, shops, members, login; sync
 - [ ] Account → shops → members; permission presets (owner / manager / staff); staff PIN switching
@@ -168,6 +174,17 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 - A corrected bill says "corrected" in the list and when, in the sheet (2026-10-29).
 - No change chips (cashiers count change in their heads): staff type the cash received and the change shows; UPI is exact (2026-10-29).
 
+### Expenses and the day
+- An expense is a record of its own `{ amount, method, note, businessDate }`; a note is required ("₹340" alone means nothing at midnight); ₹0 refused. No categories or vendors: notes the owner already typed come back as one-tap chips, nothing to configure (2026-10-29).
+- Expenses start on Cash, unlike bill payments which start on nothing: spending is overwhelmingly cash, and a wrong drawer is visible in the list and undoable (2026-10-29).
+- An expense can go on today or yesterday (a forgotten gas bill), no older; the amount is never edited, remove and re-add — like a payment (2026-10-29).
+- The day's numbers read by the order's business day, so a bill served Tuesday and paid after 4 am Wednesday is Tuesday's; part payments on a bill still open count, as the money is real (2026-10-29).
+- The cash drawer is two facts the owner states, each a record of its own with id `opening@day` / `counted@day` (two devices never overwrite each other; stating again replaces): what it started with, and what was counted. "Should hold" = start + cash taken − cash spent, shown only once the start is known; a count then reads Matches, Short or Over. No shifts or drawer sessions — Toast-style, chain-scale (2026-10-29).
+- Yesterday's count is today's start unless today's is stated: the cash box carries over, so the owner types it once, at closing. The float can be entered before the first sale, so the cash section shows on an empty day (2026-10-29).
+- Left and the drawer figure may be below zero (more spent than taken); they are plain numbers, not `Paise` (2026-10-29).
+- "Worth a look" shows only what is not zero: unpaid, cancelled after sending, discounts, payments removed or corrected — honesty by visibility, as with voids (2026-10-29).
+- The day's records come from their own read-only port (`DayRepository`), by day, so an earlier day never depends on what the order screen loaded (2026-10-29).
+
 ### Hosting
 - Tap2Chef is a static PWA served by nginx at `tap2chef.devamhatre.com` on the owner's VPS, with its own Let's Encrypt certificate; a push to `main` that passes CI publishes the `site` branch, and the server installs it within 5 minutes — no build tools or keys on the server, no server keys on the (company) dev laptop (2026-10-29).
 - The owner's sites moved from devamhatre.cloud (expires 2026-11-11) to devamhatre.com, each with its own certificate (never one shared with .cloud, whose renewal will fail after expiry); .cloud 301-redirects until then; portfolio, POS and Tap2Chef all live on .com, and Google Search Console has the change of address (2026-10-29).
@@ -205,9 +222,8 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 **Known gaps**
 - The VPS exposes the POS API (port 8000) and a Docker container (port 4000) directly to the internet, bypassing nginx and HTTPS — close with a firewall (owner's server, not this repo).
 - After 2026-11-11: remove the .cloud server blocks and `certbot delete --cert-name devamhatre.cloud` / `pos.devamhatre.cloud`, or renewals will warn by email.
-- `useSyncStatus` / `useDeviceStorage` import `dexie-react-hooks` in the use-case layer — move behind subscribe-style ports.
+- `useDeviceStorage` is unused since Today became the day's numbers; delete it or put it behind a Settings screen. `useSyncStatus` / `useDeviceStorage` import `dexie-react-hooks` in the use-case layer — move behind subscribe-style ports.
 - Two devices opening the same table offline make two orders; the earliest is shown, the other is hidden until a merge exists (needs sync first).
-- A bill opened yesterday and settled today drops out of view (the device loads today's orders and open ones only); it counts as yesterday's, but nothing shows yesterday yet — step 7.
 - Send has no kitchen output yet: no KOT print or kitchen screen until step 9 / sync.
 - The shell defaults to Node 20; the project needs Node 22 (`nvm use`), or the jsdom tests fail to start.
 
@@ -222,3 +238,5 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 - **2026-10-29** — 6b committed. 6c built: Settled today with takings by drawer, paid-bill sheet, payment correction; checked at 360 / 820 / 1440 light and dark.
 - **2026-10-29** — 6c committed. The user challenged the one-tap settle against real life; walked the counter workflow, studied Toast / Petpooja / Apple HIG, and rebuilt as 6e: bill first, then money; payments as records; deliberate Settle with a completion moment; Settled today as a drill-in. Caught on the way: a discount agreed with a part payment was lost on reopening; the completion moment was cut short when a takeaway's screen changed.
 - **2026-10-29** — LEARNINGS.md started. 6g (remove a wrong payment) and 6f (folding Menu categories) built, browser-checked at four sizes, committed. Step 6 complete; 6d waits for the owner test; owner test of steps 5–6 and real-iPhone sheet check still open.
+- **2026-10-29** — Step 7 brainstormed, built (domain `expense` / `dayBook`, `expenseBook` + `useExpenses` / `useDayNumbers`, Dexie adapters, Expenses page, Today page) and browser-checked at 360 / 820 / 1440, light and dark. Caught on the way: `writeAll` merged over the stored row, so Undo of a removed payment (6g) never restored it in real storage; now a record replaces the row. Owner test and commit pending.
+- **2026-10-29** — 7c built (domain `drawer`, `drawerEntries` table, `DrawerRepository`, Cash drawer section and sheet on Today) and browser-checked at 360 / 820 / 1440, light and dark, including the morning case with no sales. Step 7 complete.
