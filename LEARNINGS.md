@@ -151,6 +151,10 @@ wrong and how we now avoid it**.
 
 **1b. The browser scripts live in the repo** (2026-10-29): `e2e/` (`day.mjs`, `bill2.mjs`, `menu.mjs`; see its package.json). Extend them with each feature; after any change to shared storage, re-run all of them, not just the new one.
 
+**1c. A test for a guard must fail without the guard** (2026-10-29)
+- *What happened:* the 8b test for "a pull never passes a change still being written" passed with the per-account lock removed. supertest sends a request only when something awaits it, so the "concurrent" pushes never overlapped, and the race never happened.
+- *Apply:* for every lock, ref guard or ordering rule, remove it once and watch its test fail. Make a race deterministic (hold one side back with a spy), never hope the timing hits it.
+
 **2. A test fixture must fail loudly** (2026-10-29)
 - *What happened:* A fixture fell back to a default when its setup failed,
   which hid a wrong amount.

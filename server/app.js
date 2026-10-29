@@ -4,6 +4,7 @@ import helmet from "helmet";
 import "dotenv/config";
 
 import authRoutes from "./routes/auth.js";
+import syncRoutes from "./routes/sync.js";
 
 const app = express();
 
@@ -18,6 +19,8 @@ app.use(
     credentials: true,
   }),
 );
+// A device's first push can carry a whole restaurant's history, in batches.
+app.use("/api/sync", express.json({ limit: "2mb" }), syncRoutes);
 app.use(express.json());
 
 app.get("/api/health", (req, res) => {

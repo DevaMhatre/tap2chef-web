@@ -99,7 +99,7 @@ Said no to: categories, vendors, receipts and photos, recurring expenses, editin
 ### 8. Accounts, devices, staff, login; sync
 Brainstormed 2026-10-29 (real life: the owner's data lives on one phone; the rush-hour pain is the waiter's phone and the counter being two islands, not several shops; staff have no email but remember 4 digits; the midnight question "who cancelled that?"; Square device codes and passcodes, Toast passcodes, Petpooja captain logins, WhatsApp Web device linking). Ordered by the first user's pain; 8a–8d help even with one phone, as a backup.
 - [x] 8a Domain + storage: `Account / Shop / Member / Role`, `can()`, owner / manager / staff presets, PIN rule; `tenantId` → `accountId` / `shopId` (Dexie v7), unused `settings` table dropped. Upgrade checked in Chrome: data written by the live build survives, and a tab left open on the old build keeps working — `ac755fa`
-- [ ] 8b Server: tenancy gate + sync endpoints (record store per account, `seq` by arrival, push / pull since N, `can()` per table), isolation tests
+- [x] 8b Server: tenancy gate (a query without `accountId` throws), `POST /api/sync/push` and `GET /api/sync/pull?shopId&since`, device tokens, `can()` per table, a client–server contract test; 25 tests including isolation and a push overtaking a slow one
 - [ ] 8c Owner sign-in by email OTP; sign-up creates account, first shop and owner member from the device's own ids
 - [ ] 8d Client sync engine: push outbox, pull since N, apply without re-queuing; poll ~3 s while visible. Push stamps the device's scope on any record without `accountId` (a tab still running the pre-8a build keeps writing `tenantId` records until it reloads)
 - [ ] 8e Add a device (QR / 6-digit code from the owner's phone); members with PINs; "by Ravi" on cancels and payments; screens gated by `can()`
@@ -130,6 +130,9 @@ Newest change first within each group. Format: decision — reason (date).
 - A device joins a shop by a QR / 6-digit code shown on the owner's phone (online once), like WhatsApp Web — no dashboard, no staff email (2026-10-29).
 - A PIN identifies the person (name and attribution, not security), so it is refused when a colleague would guess it first: all one digit or a straight run (1111, 1234, 9876) (2026-10-29).
 - Presets: staff run the service (orders, payments, cancel a sent dish, out today, note an expense; every slip stays visible); a manager also discounts, corrects or removes payments and expenses, sees the day and edits menu and tables; only the owner manages people, devices, shops and the plan. A member who left keeps their name on old records and can do nothing (2026-10-29).
+- The server stores a synced record as the device sent it (one collection, keyed by account, table and id) and checks only whose it is and who may write that table; the rules for orders and payments live on the device. Server schemas per table would repeat the domain and change every month (2026-10-29).
+- Pushes for one account run one at a time and take a block of sync numbers, written in order: otherwise a quick push could overtake a slow one, and a device pulling in between would move its cursor past records not yet written (2026-10-29).
+- The server checks permissions against the member who signed the device in; who is holding it (the PIN) is checked on the device, as Square and Toast do. The account's menu can be written only by someone who works in all shops; a record never moves to another shop (2026-10-29).
 - The API runs on the owner's VPS behind nginx at `/api`, same origin as the PWA — no CORS, one certificate (2026-10-29).
 - Sync: last write wins in the **server's arrival order**, never device clocks; pull by sync number — cheap phones often have wrong clocks (2026-10-29).
 - A device holds only what its signed-in member may see; the server decides (2026-10-29).
@@ -240,7 +243,10 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 - Two devices opening the same table offline make two orders; the earliest is shown, the other is hidden until a merge exists (needs sync first).
 - Send has no kitchen output yet: no KOT print or kitchen screen until step 9 / sync.
 - Reads don't filter by shop yet: fine while a device holds one shop; needed (or one local database per shop) before an owner's device syncs two shops.
-- The server can't import the client's TypeScript domain: permission presets will exist twice (client TS, server JS) until a shared package exists; a test must keep them equal.
+- The server can't import the client's TypeScript: permissions and synced tables exist twice, kept equal by `server/tests/contract.test.js` until a shared package exists.
+- The push lock lives in one Node process; a second server instance would need a lock in the database.
+- Fine-grained permissions (removing a payment, a discount) are checked only on the device; the server checks per table.
+- The POS project's password login (`User`, `/api/auth/login`) is still in the server until 8c replaces it with email OTP.
 - The shell defaults to Node 20; the project needs Node 22 (`nvm use`), or the jsdom tests fail to start.
 
 ---
