@@ -35,7 +35,7 @@ await page.waitForSelector("text=How many tables?");
 await page.evaluate(async () => {
   const open = indexedDB.open("tap2chef");
   const idb = await new Promise((res, rej) => ((open.onsuccess = () => res(open.result)), (open.onerror = rej)));
-  const meta = { tenantId: "local-test", createdAt: 1, updatedAt: 1, deleted: false };
+  const meta = { accountId: "test", shopId: "test", createdAt: 1, updatedAt: 1, deleted: false };
   const tx = idb.transaction(["menuProfiles", "categories", "items"], "readwrite");
   const p = (id, name, sortKey) => tx.objectStore("menuProfiles").put({ ...meta, id, name, sortKey });
   p("dine", "Dine-In", "1");

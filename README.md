@@ -15,9 +15,10 @@ Browser / installed PWA
 Express + MongoDB: login, backup, multiple devices
 ```
 
-Every synced record has `id` (generated on the device), `tenantId`,
-`updatedAt` and `deleted` (soft delete). Write through `save()` / `remove()`
-in `client/src/infrastructure/db/repo.ts` so changes always land in the outbox.
+Every synced record has `id` (generated on the device), `accountId` (plus
+`shopId` on shop-level records), `updatedAt` and `deleted` (soft delete). Write
+through `writeAll()` in `client/src/infrastructure/db/repo.ts` so changes always
+land in the outbox.
 
 ## Run locally
 

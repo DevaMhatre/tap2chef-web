@@ -1,10 +1,13 @@
 import Dexie, { type EntityTable } from "dexie";
+import { newId } from "../id";
 
 // Sync metadata every stored record carries. This is a storage concern, so it
 // lives here rather than in the domain.
 export interface StoredRecord {
   id: string;
-  tenantId: string;
+  accountId: string;
+  /** Only on shop-level records; the menu belongs to the whole account. */
+  shopId?: string;
   createdAt: number;
   updatedAt: number;
   /** Soft delete, so deletions can sync to other devices. */
@@ -24,11 +27,11 @@ export interface OutboxRow {
   queuedAt: number;
 }
 
-export const SYNCED_TABLES = [
-  "settings",
-  "menuProfiles",
-  "categories",
-  "items",
+// The account's catalog: every shop sells from it.
+export const ACCOUNT_TABLES = ["menuProfiles", "categories", "items"] as const;
+
+// One restaurant's service and money.
+export const SHOP_TABLES = [
   "orders",
   "orderItems",
   "expenses",
@@ -38,7 +41,11 @@ export const SYNCED_TABLES = [
   "drawerEntries",
 ] as const;
 
+export const SYNCED_TABLES = [...ACCOUNT_TABLES, ...SHOP_TABLES] as const;
+
 export type SyncedTable = (typeof SYNCED_TABLES)[number];
+
+export const isShopTable = (table: SyncedTable): boolean => (SHOP_TABLES as readonly string[]).includes(table);
 
 type Tables = { [T in SyncedTable]: EntityTable<StoredRecord, "id"> } & {
   meta: EntityTable<MetaRow, "key">;
@@ -92,3 +99,39 @@ db.version(5).stores({
 db.version(6).stores({
   drawerEntries: "id, tenantId, businessDate, updatedAt",
 });
+
+// Step 8a: a device's single `tenantId` becomes the account it belongs to and
+// the shop it works in. The ids are made here, on the device, and the server
+// will adopt them at sign-up, so records are never re-tagged. The unused
+// `settings` table goes, and so do the tenant indexes nothing queried.
+db.version(7)
+  .stores({
+    settings: null,
+    menuProfiles: "id, updatedAt",
+    categories: "id, updatedAt",
+    items: "id, categoryId, updatedAt",
+    orders: "id, status, businessDate, updatedAt",
+    orderItems: "id, orderId, updatedAt",
+    expenses: "id, businessDate, updatedAt",
+    diningTables: "id, updatedAt",
+    outOfStock: "id, businessDate, updatedAt",
+    payments: "id, orderId, updatedAt",
+    drawerEntries: "id, businessDate, updatedAt",
+  })
+  .upgrade(async (tx) => {
+    const meta = tx.table<MetaRow, string>("meta");
+    const tenant = await meta.get("tenantId");
+    const accountId = tenant?.value.replace(/^local-/, "") ?? newId();
+    const shopId = newId();
+    await meta.bulkPut([{ key: "accountId", value: accountId }, { key: "shopId", value: shopId }]);
+    await meta.delete("tenantId");
+
+    for (const table of SYNCED_TABLES) {
+      const shop = isShopTable(table);
+      await tx.table<StoredRecord, string>(table).toCollection().modify((row) => {
+        delete row.tenantId;
+        row.accountId = accountId;
+        if (shop) row.shopId = shopId;
+      });
+    }
+  });

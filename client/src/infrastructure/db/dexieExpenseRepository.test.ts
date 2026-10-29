@@ -71,7 +71,7 @@ describe("dexieExpenseRepository", () => {
   });
 
   it("skips malformed records rather than trusting them", async () => {
-    await db.expenses.put({ id: "bad", tenantId: "t", createdAt: 1, updatedAt: 1, deleted: false, amount: -5, method: "cash", note: "x", businessDate: TODAY, recordedAt: 1 });
+    await db.expenses.put({ id: "bad", accountId: "t", shopId: "t", createdAt: 1, updatedAt: 1, deleted: false, amount: -5, method: "cash", note: "x", businessDate: TODAY, recordedAt: 1 });
     await dexieExpenseRepository.write([{ table: "expenses", op: "put", record: expense("ok", TODAY) }]);
     expect((await expenses(TODAY, (s) => s.expenses.length >= 1)).expenses.map((e) => e.id)).toEqual(["ok"]);
   });

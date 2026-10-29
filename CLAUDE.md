@@ -189,9 +189,10 @@ type Order = { status: string; servedAt?: number | null; payments?: Payment[] | 
 - Implements ports. Knows Dexie, `navigator`, `fetch`, Web Bluetooth.
 - **Anti-Corruption Layer:** one adapter per external boundary translates domain
   ↔ wire format (server JSON, sync payloads). Domain never speaks wire format.
-- Writes go through `save()` / `remove()` in `infrastructure/db/repo.ts` so every
+- Writes go through `writeAll()` in `infrastructure/db/repo.ts` so every
   change lands in the outbox in the same transaction.
-- Records carry `id` (generated on device), `tenantId`, `createdAt`,
+- Records carry `id` (generated on device), `accountId` (plus `shopId` on
+  shop-level records, stamped by storage from the device's scope), `createdAt`,
   `updatedAt`, `deleted` (soft delete). Sync conflict rule: last write wins, in
   the **server's arrival order**, never device clocks (cheap phones often show
   the wrong time). Clients pull "changes since sync number N", not by timestamp.

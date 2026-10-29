@@ -96,12 +96,17 @@ Browser scripts now live in `e2e/`. Replacing a drawer count has Undo.
 
 Said no to: categories, vendors, receipts and photos, recurring expenses, editing an amount (remove and re-add), profit by dish, shifts and drawer sessions, taking cash out for the bank as its own record.
 
-### 8. Accounts, shops, members, login; sync
-- [ ] Account → shops → members; permission presets (owner / manager / staff); staff PIN switching
-- [ ] Real login (owner email / OTP)
-- [ ] Sync: server-ordered last-write-wins, pull "changes since N"
-- [ ] Rename `tenantId` → `accountId` / `shopId`; shop overrides table
-- [ ] Subscriptions and billing (after the above)
+### 8. Accounts, devices, staff, login; sync
+Brainstormed 2026-10-29 (real life: the owner's data lives on one phone; the rush-hour pain is the waiter's phone and the counter being two islands, not several shops; staff have no email but remember 4 digits; the midnight question "who cancelled that?"; Square device codes and passcodes, Toast passcodes, Petpooja captain logins, WhatsApp Web device linking). Ordered by the first user's pain; 8a–8d help even with one phone, as a backup.
+- [x] 8a Domain + storage: `Account / Shop / Member / Role`, `can()`, owner / manager / staff presets, PIN rule; `tenantId` → `accountId` / `shopId` (Dexie v7), unused `settings` table dropped. Upgrade checked in Chrome: data written by the live build survives, and a tab left open on the old build keeps working
+- [ ] 8b Server: tenancy gate + sync endpoints (record store per account, `seq` by arrival, push / pull since N, `can()` per table), isolation tests
+- [ ] 8c Owner sign-in by email OTP; sign-up creates account, first shop and owner member from the device's own ids
+- [ ] 8d Client sync engine: push outbox, pull since N, apply without re-queuing; poll ~3 s while visible. Push stamps the device's scope on any record without `accountId` (a tab still running the pre-8a build keeps writing `tenantId` records until it reloads)
+- [ ] 8e Add a device (QR / 6-digit code from the owner's phone); members with PINs; "by Ravi" on cancels and payments; screens gated by `can()`
+- [ ] API deployed behind nginx at `tap2chef.devamhatre.com/api`
+- [ ] Later: shop overrides table and a second-shop screen; subscriptions and billing
+
+Said no to: an account before first use, passwords, staff emails or logins, a web dashboard to add devices, permission matrices (three presets, as data), a second-shop screen before a second shop exists.
 
 ### 9. Printing / KOT
 - [ ] Web Bluetooth (Android) / print dialog / WhatsApp share, behind one port
@@ -119,6 +124,13 @@ Newest change first within each group. Format: decision — reason (date).
 - Code checks permissions, never role names; owner / manager / staff are preset bundles (data) — custom roles later need no code change (2026-10-29).
 - Owner signs a device in once; staff switch on shared devices with a 4-digit PIN — restaurants share tablets (2026-10-29).
 - A lapsed or unreachable subscription never blocks taking an order mid-service (2026-10-29).
+- No account until it pays off: the app works unsigned, and signing in is offered at "Add a device" or "Keep a copy safe"; the device's own records come along — no setup before value, nothing running breaks (2026-10-29).
+- Account and shop ids are made on the device at first use, and the server adopts them at sign-up, so no record is ever re-tagged; the old `local-…` tenant became the account id (2026-10-29).
+- Owner sign-in is email OTP, no password; phone SMS waits for a real owner to ask — Indian SMS needs DLT registration and costs per message (2026-10-29).
+- A device joins a shop by a QR / 6-digit code shown on the owner's phone (online once), like WhatsApp Web — no dashboard, no staff email (2026-10-29).
+- A PIN identifies the person (name and attribution, not security), so it is refused when a colleague would guess it first: all one digit or a straight run (1111, 1234, 9876) (2026-10-29).
+- Presets: staff run the service (orders, payments, cancel a sent dish, out today, note an expense; every slip stays visible); a manager also discounts, corrects or removes payments and expenses, sees the day and edits menu and tables; only the owner manages people, devices, shops and the plan. A member who left keeps their name on old records and can do nothing (2026-10-29).
+- The API runs on the owner's VPS behind nginx at `/api`, same origin as the PWA — no CORS, one certificate (2026-10-29).
 - Sync: last write wins in the **server's arrival order**, never device clocks; pull by sync number — cheap phones often have wrong clocks (2026-10-29).
 - A device holds only what its signed-in member may see; the server decides (2026-10-29).
 
@@ -202,6 +214,8 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 ## Open questions
 
 **For the restaurant owner**
+- How many phones or tablets would you use at once? Do waiters use their own phones, or one shared device? → decides how much of 8e comes first.
+- Who should be able to give a discount or see the day's takings when you are not there? → checks the presets.
 - Who takes the money: the counter, or the waiter at the table? Do you print the bill today?
 - Do regulars pay later ("likh lo")? How do you keep track? → decides a "pay later" method.
 - Do friends split one bill across several UPI payments?
@@ -225,6 +239,8 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 - `useDeviceStorage` is unused since Today became the day's numbers; delete it or put it behind a Settings screen. `useSyncStatus` / `useDeviceStorage` import `dexie-react-hooks` in the use-case layer — move behind subscribe-style ports.
 - Two devices opening the same table offline make two orders; the earliest is shown, the other is hidden until a merge exists (needs sync first).
 - Send has no kitchen output yet: no KOT print or kitchen screen until step 9 / sync.
+- Reads don't filter by shop yet: fine while a device holds one shop; needed (or one local database per shop) before an owner's device syncs two shops.
+- The server can't import the client's TypeScript domain: permission presets will exist twice (client TS, server JS) until a shared package exists; a test must keep them equal.
 - The shell defaults to Node 20; the project needs Node 22 (`nvm use`), or the jsdom tests fail to start.
 
 ---

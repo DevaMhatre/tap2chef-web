@@ -121,6 +121,10 @@ wrong and how we now avoid it**.
 - *What happened:* `writeAll` merged each record over the stored row. Undo of a removed payment (6g) put back a record without `removedAt`, the merge kept the old `removedAt`, and the payment stayed removed. Unit tests used the fake repository, which replaces, so they passed. Found by the expenses browser run.
 - *Apply:* a write replaces the row whole (only `createdAt` survives). Every adapter gets a round-trip test for "set, then unset" on any optional field. Fakes must behave like the real store on exactly the point under test.
 
+**6. A storage migration meets the old code still running** (2026-10-29)
+- *What happened:* the 8a upgrade (tenant → account / shop) passed unit tests and a real upgrade of the live build's data. A second check, with an old tab left open while a new tab upgraded, showed the old tab still writing, now with a fresh `tenantId` and no `accountId`. Deployed code can't be changed, so nothing in the migration could prevent it.
+- *Apply:* test every Dexie version bump in real Chrome twice: data written by the live build, upgraded; and a live-build tab left open during the upgrade, then writing. Whatever the old code can still write must be tolerated downstream (here: sync push stamps the scope).
+
 ## UI mechanics
 
 **1. Anything that must outlive a screen lives above all screens** (2026-10-29)

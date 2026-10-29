@@ -1,29 +1,36 @@
-import { db, type StoredRecord, type SyncedTable } from "./db";
+import { db, isShopTable, type StoredRecord, type SyncedTable } from "./db";
 import { newId } from "../id";
 
-// Until real login exists, this device gets its own tenant id. After login
-// the records will be re-tagged with the account's tenant.
-export async function getTenantId(): Promise<string> {
-  const row = await db.meta.get("tenantId");
-  if (row) return row.value;
+/** The account this device belongs to and the shop it works in. */
+export type Scope = { accountId: string; shopId: string };
 
-  const tenantId = `local-${newId()}`;
-  await db.meta.put({ key: "tenantId", value: tenantId });
-  return tenantId;
+// Made on the device the first time anything is stored, before any sign-in;
+// the server adopts these ids at sign-up, so no record is ever re-tagged.
+// Domain and use cases never see them: storage stamps every write.
+export async function getScope(): Promise<Scope> {
+  return db.transaction("rw", db.meta, async () => {
+    const [account, shop] = await db.meta.bulkGet(["accountId", "shopId"]);
+    const scope = { accountId: account?.value ?? newId(), shopId: shop?.value ?? newId() };
+    if (!account || !shop) {
+      await db.meta.bulkPut([{ key: "accountId", value: scope.accountId }, { key: "shopId", value: scope.shopId }]);
+    }
+    return scope;
+  });
 }
 
 type NewOrExisting = Partial<StoredRecord> & Record<string, unknown>;
 
 // Create or update a record and queue it for sync, in one transaction so a
 // saved record is never missing from the outbox.
-export async function save(table: SyncedTable, data: NewOrExisting): Promise<StoredRecord> {
-  const tenantId = data.tenantId ?? (await getTenantId());
+export async function save(table: SyncedTable, data: NewOrExisting, scope?: Scope): Promise<StoredRecord> {
+  const { accountId, shopId } = scope ?? (await getScope());
   const now = Date.now();
 
   const record: StoredRecord = {
     ...data,
     id: data.id ?? newId(),
-    tenantId,
+    accountId,
+    ...(isShopTable(table) ? { shopId } : {}),
     createdAt: data.createdAt ?? now,
     updatedAt: now,
     deleted: data.deleted ?? false,
@@ -52,13 +59,13 @@ export type RecordWrite = { table: SyncedTable; record: { id: string }; op: "put
  */
 export async function writeAll(writes: readonly RecordWrite[]): Promise<void> {
   // Read outside the transaction: `meta` is not one of its tables.
-  const tenantId = await getTenantId();
+  const scope = await getScope();
   const tables = [...new Set(writes.map((w) => db[w.table]))];
 
   await db.transaction("rw", [...tables, db.outbox], async () => {
     for (const { table, record, op } of writes) {
       const existing = await db[table].get(record.id);
-      await save(table, { createdAt: existing?.createdAt, ...record, tenantId, deleted: op === "remove" });
+      await save(table, { createdAt: existing?.createdAt, ...record, deleted: op === "remove" }, scope);
     }
   });
 }

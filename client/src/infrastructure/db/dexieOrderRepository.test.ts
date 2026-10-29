@@ -101,7 +101,7 @@ describe("dexieOrderRepository", () => {
   });
 
   it("skips malformed payments from sync", async () => {
-    const meta = { tenantId: "t", createdAt: 1, updatedAt: 1, deleted: false };
+    const meta = { accountId: "t", shopId: "t", createdAt: 1, updatedAt: 1, deleted: false };
     await dexieOrderRepository.write([{ op: "put", table: "orders", record: order }]);
     await db.payments.bulkPut([
       { ...meta, id: "good", orderId: order.id, amount: 100, receivedAt: 5, method: "cash" },
@@ -123,7 +123,7 @@ describe("dexieOrderRepository", () => {
   });
 
   it("skips malformed lines from sync", async () => {
-    const meta = { tenantId: "t", createdAt: 1, updatedAt: 1, deleted: false };
+    const meta = { accountId: "t", shopId: "t", createdAt: 1, updatedAt: 1, deleted: false };
     await dexieOrderRepository.write([{ op: "put", table: "orders", record: order }]);
     await db.orderItems.bulkPut([
       { ...meta, ...line, id: "good" },

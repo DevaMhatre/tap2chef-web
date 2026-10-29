@@ -92,7 +92,7 @@ for (const scheme of ["light", "dark"]) {
     await page.evaluate(async ({ today, yesterday }) => {
       const open = () => new Promise((res, rej) => { const r = indexedDB.open("tap2chef"); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
       const db = await open();
-      const base = { tenantId: "x", createdAt: 1, updatedAt: 1, deleted: false };
+      const base = { accountId: "x", shopId: "x", createdAt: 1, updatedAt: 1, deleted: false };
       const put = (store, rec) => new Promise((res, rej) => { const t = db.transaction(store, "readwrite"); t.objectStore(store).put({ ...base, ...rec }); t.oncomplete = res; t.onerror = () => rej(t.error); });
       const now = Date.now();
       const order = (id, day, status, state, token) => put("orders", { id, channel: { type: "takeaway", token }, profileId: "p", businessDate: day, openedAt: now - 5000, status, state });

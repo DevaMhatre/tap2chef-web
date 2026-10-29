@@ -59,7 +59,7 @@ describe("dexieMenuRepository", () => {
   });
 
   it("skips malformed records from sync instead of trusting them", async () => {
-    const meta = { tenantId: "t", createdAt: 1, updatedAt: 1, deleted: false };
+    const meta = { accountId: "t", createdAt: 1, updatedAt: 1, deleted: false };
     await db.items.bulkPut([
       { ...meta, ...samosa },
       { ...meta, id: "float", name: "Bad", categoryId: "starters", diet: "veg", sortKey: "2", prices: { x: { kind: "fixed", price: 12.5 } } },
