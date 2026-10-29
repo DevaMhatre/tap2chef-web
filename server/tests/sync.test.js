@@ -1,4 +1,5 @@
 import { jest } from "@jest/globals";
+import jwt from "jsonwebtoken";
 import request from "supertest";
 import app from "../app.js";
 import Member from "../models/Member.js";
@@ -88,8 +89,8 @@ describe("devices", () => {
     const { accountId, shopId, owner } = await createAccount();
     await request(app).get("/api/sync/pull").query({ shopId }).expect(401);
     await as("garbage").pull(shopId).expect(401);
-    const { signToken } = await import("./helpers/token.js");
-    await as(signToken({ _id: owner._id, role: "owner" })).pull(shopId).expect(401);
+    const userToken = jwt.sign({ id: owner._id, role: "owner" }, process.env.JWT_SECRET);
+    await as(userToken).pull(shopId).expect(401);
     await as(deviceToken(accountId, "nobody")).pull(shopId).expect(401);
   });
 

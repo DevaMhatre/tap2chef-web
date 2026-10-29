@@ -1,9 +1,16 @@
 import { z } from "zod";
 import { ACCOUNT_TABLES, SHOP_TABLES } from "../domain/tables.js";
 
-export const loginSchema = z.object({
-  email: z.string().email("A valid email is required"),
-  password: z.string().min(1, "Password is required"),
+const email = z.string().trim().toLowerCase().pipe(z.email("Enter a valid email"));
+
+export const codeRequestSchema = z.object({ email });
+
+export const verifySchema = z.object({
+  email,
+  code: z.string().regex(/^\d{6}$/, "The code is 6 digits"),
+  /** The ids the device already files its records under; a new account adopts them. */
+  device: z.object({ accountId: z.string().min(1).max(100), shopId: z.string().min(1).max(100) }),
+  restaurantName: z.string().trim().min(1).max(60).optional(),
 });
 
 const SYNCED = [...ACCOUNT_TABLES, ...SHOP_TABLES];

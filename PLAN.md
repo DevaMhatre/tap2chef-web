@@ -100,7 +100,7 @@ Said no to: categories, vendors, receipts and photos, recurring expenses, editin
 Brainstormed 2026-10-29 (real life: the owner's data lives on one phone; the rush-hour pain is the waiter's phone and the counter being two islands, not several shops; staff have no email but remember 4 digits; the midnight question "who cancelled that?"; Square device codes and passcodes, Toast passcodes, Petpooja captain logins, WhatsApp Web device linking). Ordered by the first user's pain; 8a–8d help even with one phone, as a backup.
 - [x] 8a Domain + storage: `Account / Shop / Member / Role`, `can()`, owner / manager / staff presets, PIN rule; `tenantId` → `accountId` / `shopId` (Dexie v7), unused `settings` table dropped. Upgrade checked in Chrome: data written by the live build survives, and a tab left open on the old build keeps working — `ac755fa`
 - [x] 8b Server: tenancy gate (a query without `accountId` throws), `POST /api/sync/push` and `GET /api/sync/pull?shopId&since`, device tokens, `can()` per table, a client–server contract test; 25 tests including isolation and a push overtaking a slow one — `264f7bd`
-- [ ] 8c Owner sign-in by email OTP; sign-up creates account, first shop and owner member from the device's own ids
+- [x] 8c Owner sign-in by email code: the "Saved on this device" pill opens "Keep a Copy Safe" → email → 6-digit code (signs in on the sixth digit) → the restaurant's name, only for a new owner → a completion moment. Server: codes hashed, 10 min, 5 tries counted atomically, used once, 30 s before another, rate limits in production; Resend in production, the console elsewhere; `npm run dev:memory` runs the API without MongoDB. Browser-checked at 360 / 820 / 1440, light and dark, offline, and a second phone joining. **Not to go live before 8d**: the sheet says the work is kept in the account, which is true only once sync runs
 - [ ] 8d Client sync engine: push outbox, pull since N, apply without re-queuing; poll ~3 s while visible. Push stamps the device's scope on any record without `accountId` (a tab still running the pre-8a build keeps writing `tenantId` records until it reloads)
 - [ ] 8e Add a device (QR / 6-digit code from the owner's phone); members with PINs; "by Ravi" on cancels and payments; screens gated by `can()`
 - [ ] API deployed behind nginx at `tap2chef.devamhatre.com/api`
@@ -126,6 +126,9 @@ Newest change first within each group. Format: decision — reason (date).
 - A lapsed or unreachable subscription never blocks taking an order mid-service (2026-10-29).
 - No account until it pays off: the app works unsigned, and signing in is offered at "Add a device" or "Keep a copy safe"; the device's own records come along — no setup before value, nothing running breaks (2026-10-29).
 - Account and shop ids are made on the device at first use, and the server adopts them at sign-up, so no record is ever re-tagged; the old `local-…` tenant became the account id (2026-10-29).
+- Signing in lives behind the "Saved on this device" pill, the one place that already talks about where the work is kept — no Settings screen to add (2026-10-29).
+- The code signs in by itself on its sixth digit, with no button; a wrong code clears the field. Offline or a server fault is said quietly beside the field, never in red on it: red means the typed text is wrong (2026-10-29).
+- A new owner is asked only the restaurant's name, after the code; the owner's own name waits for staff (8e). Signing in to an existing account on a device with records brings them into it (duplicates in the menu are a warning, never a rule) (2026-10-29).
 - Owner sign-in is email OTP, no password; phone SMS waits for a real owner to ask — Indian SMS needs DLT registration and costs per message (2026-10-29).
 - A device joins a shop by a QR / 6-digit code shown on the owner's phone (online once), like WhatsApp Web — no dashboard, no staff email (2026-10-29).
 - A PIN identifies the person (name and attribution, not security), so it is refused when a colleague would guess it first: all one digit or a straight run (1111, 1234, 9876) (2026-10-29).
@@ -244,6 +247,9 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 - Send has no kitchen output yet: no KOT print or kitchen screen until step 9 / sync.
 - Reads don't filter by shop yet: fine while a device holds one shop; needed (or one local database per shop) before an owner's device syncs two shops.
 - The server can't import the client's TypeScript: permissions and synced tables exist twice, kept equal by `server/tests/contract.test.js` until a shared package exists.
+- Signing in to an account with several shops picks the first one the owner works in; a shop picker comes with a second shop.
+- A write landing in the instant a sign-in re-tags the device could keep the old ids; 8d's push stamps the device's scope where it is missing or unknown.
+- Going live with 8c/8d needs on the VPS: `NODE_ENV=production`, `RESEND_API_KEY`, `MAIL_FROM` (devamhatre.com verified in Resend), and nginx proxying `/api`.
 - The push lock lives in one Node process; a second server instance would need a lock in the database.
 - Fine-grained permissions (removing a payment, a discount) are checked only on the device; the server checks per table.
 - The POS project's password login (`User`, `/api/auth/login`) is still in the server until 8c replaces it with email OTP.

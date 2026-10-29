@@ -7,6 +7,7 @@ import { dexieDrawerRepository } from "./infrastructure/db/dexieDrawerRepository
 import { dexieExpenseRepository } from "./infrastructure/db/dexieExpenseRepository";
 import { dexieOrderRepository } from "./infrastructure/db/dexieOrderRepository";
 import { dexieSyncRepository } from "./infrastructure/db/dexieSyncRepository";
+import { httpAccountService } from "./infrastructure/account/httpAccountService";
 import { newId } from "./infrastructure/id";
 import { browserNetworkStatus } from "./infrastructure/network";
 import AppShell from "./ui/AppShell";
@@ -30,6 +31,7 @@ const ports: Ports = {
   expenses: dexieExpenseRepository,
   days: dexieDayRepository,
   drawer: dexieDrawerRepository,
+  account: httpAccountService,
   ids: { newId },
   clock: { now: Date.now },
 };

@@ -5,6 +5,8 @@ import type { Category, ItemOverride, MenuItem, MenuProfile } from "../domain/me
 import type { DrawerEntry } from "../domain/drawer";
 import type { Expense } from "../domain/expense";
 import type { BusinessDate, Order, OrderLine, OutOfStock, Payment } from "../domain/order";
+import type { DeviceSession, Email } from "../domain/signIn";
+import type { Result } from "../domain/result";
 import type { DiningTable } from "../domain/tables";
 
 export interface SyncRepository {
@@ -106,6 +108,28 @@ export interface DrawerRepository {
   write(changes: readonly DrawerChange[]): Promise<void>;
 }
 
+export type CodeRequestError = { kind: "offline" } | { kind: "tooSoon"; retryIn: number } | { kind: "failed" };
+export type SignInError = "offline" | "wrongCode" | "expired" | "tooManyTries" | "noAccess" | "failed";
+export type SignInOutcome = { kind: "signedIn"; session: DeviceSession } | { kind: "needsName" };
+
+/**
+ * Signing this device in to the owner's account. Needs the internet; nothing
+ * else in the app waits on it. Which account and shop the device's records
+ * belong to is the adapter's business, never the caller's.
+ */
+export interface AccountService {
+  /** Emits now (null when not signed in), then after every change. */
+  subscribe(onChange: (session: DeviceSession | null) => void): () => void;
+  requestCode(email: Email, signal?: AbortSignal): Promise<Result<{ resendIn: number }, CodeRequestError>>;
+  /** A new owner is asked for the restaurant's name, then calls again with it. */
+  signIn(
+    email: Email,
+    code: string,
+    restaurantName: string | undefined,
+    signal?: AbortSignal,
+  ): Promise<Result<SignInOutcome, SignInError>>;
+}
+
 export interface Clock {
   now(): number;
 }
@@ -122,6 +146,7 @@ export interface Ports {
   expenses: ExpenseRepository;
   days: DayRepository;
   drawer: DrawerRepository;
+  account: AccountService;
   ids: IdGenerator;
   clock: Clock;
 }

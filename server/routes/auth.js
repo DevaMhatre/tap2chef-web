@@ -1,11 +1,12 @@
 import express from "express";
-import { login } from "../controllers/authController.js";
+import { requestCode, verifyCode } from "../controllers/authController.js";
 import validate from "../middleware/validate.js";
-import { loginSchema } from "../validators/schemas.js";
-import { loginLimiter } from "../middleware/rateLimiters.js";
+import { codeRequestSchema, verifySchema } from "../validators/schemas.js";
+import { codeLimiter, verifyLimiter } from "../middleware/rateLimiters.js";
 
 const router = express.Router();
 
-router.post("/login", loginLimiter, validate(loginSchema), login);
+router.post("/code", codeLimiter, validate(codeRequestSchema), requestCode);
+router.post("/verify", verifyLimiter, validate(verifySchema), verifyCode);
 
 export default router;

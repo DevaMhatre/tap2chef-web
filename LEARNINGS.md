@@ -139,6 +139,14 @@ wrong and how we now avoid it**.
   Test a double-tap in the browser script (`dblclick`) as well as in unit
   tests.
 
+**3. A sheet whose own action changes what decides its content** (2026-10-29)
+- *What happened:* the account sheet chose "sign in" or "account" from the session. Signing in set the session, the parent swapped sheets, and the "Signed in" moment never showed. Same family as UI 1, met again in a new shape.
+- *Apply:* a sheet decides what it shows when it opens and keeps it until it closes. Ask of every sheet: does its own commit change the state that picks its content?
+
+**4. The browser validates before we do** (2026-10-29)
+- *What happened:* `type="email"` made the browser stop the form with its own bubble, so our message never showed.
+- *Apply:* forms with our own validation get `noValidate`; the browser script checks that our words appear.
+
 ## Process and testing
 
 **1. The browser script catches what unit tests can't** (2026-10-29)

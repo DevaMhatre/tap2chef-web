@@ -1,37 +1,14 @@
 import mongoose from "mongoose";
 
+// Someone who signs devices in with their email: an owner today. Which
+// accounts they belong to lives here, so finding them at sign-in never needs
+// a query across accounts (the tenancy gate refuses one).
 const userSchema = new mongoose.Schema(
   {
-    name: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-
-    email: {
-      type: String,
-      required: true,
-      unique: true,
-      trim: true,
-      lowercase: true,
-    },
-
-    password: {
-      type: String,
-      required: true,
-    },
-
-    role: {
-      type: String,
-      enum: ["owner", "staff"],
-      default: "staff",
-    },
+    email: { type: String, required: true, unique: true, trim: true, lowercase: true },
+    memberships: [{ _id: false, accountId: { type: String, required: true }, memberId: { type: String, required: true } }],
   },
-  {
-    timestamps: true,
-  },
+  { timestamps: true },
 );
 
-const User = mongoose.model("User", userSchema);
-
-export default User;
+export default mongoose.model("User", userSchema);

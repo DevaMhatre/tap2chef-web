@@ -38,6 +38,9 @@ export default defineConfig({
       },
     }),
   ],
+  // The API is on the same origin, as nginx serves it in production.
+  server: { proxy: { "/api": "http://localhost:8000" } },
+  preview: { proxy: { "/api": "http://localhost:8000" } },
   test: {
     // Domain and use-case tests run in node; files that need a DOM opt in
     // with a `// @vitest-environment jsdom` comment.

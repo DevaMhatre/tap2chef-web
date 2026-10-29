@@ -1,6 +1,9 @@
 // In-memory ports for use-case tests. Not imported by the app.
 import { applyChanges } from "./applyChanges";
+import type { DeviceSession } from "../domain/signIn";
+import { err, ok } from "../domain/result";
 import type {
+  AccountService,
   Clock,
   DayRepository,
   DaySnapshot,
@@ -152,4 +155,56 @@ export function fakeDrawerRepository() {
     },
   };
   return { repository, writes };
+}
+
+/**
+ * A server that knows one code. Every call is recorded; `hold()` keeps the
+ * next sign-in waiting until `release()`, to test taps and unmounts mid-request.
+ */
+export function fakeAccountService({ code = "123456", knownEmails = [] as string[], offline = false } = {}) {
+  let session: DeviceSession | null = null;
+  const listeners = new Set<(s: DeviceSession | null) => void>();
+  const calls = { requestCode: [] as string[], signIn: [] as { email: string; code: string; name?: string }[] };
+  let gate: Promise<void> | undefined;
+  let open = () => {};
+  const state = { offline, tooSoon: 0, names: new Map<string, string>(knownEmails.map((e) => [e, "Sharma Dhaba"])) };
+
+  const service: AccountService = {
+    subscribe(onChange) {
+      listeners.add(onChange);
+      onChange(session);
+      return () => listeners.delete(onChange);
+    },
+    async requestCode(email) {
+      calls.requestCode.push(email);
+      if (state.offline) return err({ kind: "offline" });
+      if (state.tooSoon > 0) return err({ kind: "tooSoon", retryIn: state.tooSoon });
+      return ok({ resendIn: 30 });
+    },
+    async signIn(email, typed, name, signal) {
+      calls.signIn.push({ email, code: typed, name });
+      if (gate) await gate;
+      if (signal?.aborted) return err("failed");
+      if (state.offline) return err("offline");
+      if (typed !== code) return err("wrongCode");
+      const known = state.names.get(email);
+      if (!known && !name) return ok({ kind: "needsName" });
+      session = { email, restaurantName: known ?? name! };
+      listeners.forEach((l) => l(session));
+      return ok({ kind: "signedIn", session });
+    },
+  };
+
+  return {
+    service,
+    calls,
+    state,
+    hold() {
+      gate = new Promise((resolve) => (open = resolve));
+    },
+    release() {
+      gate = undefined;
+      open();
+    },
+  };
 }
