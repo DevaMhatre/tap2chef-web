@@ -85,7 +85,7 @@ Brainstormed 2026-10-29 against Toast, Square and Petpooja. The discount is in; 
 
 Said no to: split by seat / by item / evenly (several payments per bill covers it), promotions engine, reopening a settled bill.
 
-### 7. Expenses and the day's numbers ✓ (7a–7c done; pending owner test; not yet committed)
+### 7. Expenses and the day's numbers ✓ (7a–7c done; pending owner test) — `47befb5`, storage fix `9517de9`
 Brainstormed 2026-10-29 (cash from the drawer, a notebook or WhatsApp, the midnight question "did the cash match?"; Toast/Square paid-out and variance, Petpooja expense module). Built in four layers, browser-checked at 360 / 820 / 1440 in light and dark.
 - [x] 7a Expenses: record of its own (amount, Cash/UPI, note, business day); two-tap entry sheet with learned note chips; Today / Yesterday; remove (struck through, Undo); list by day
 - [x] 7b The day's numbers (Today tab): Sales by drawer, Spent, Left, "Cash for the drawer", "Worth a look" (not paid yet, cancelled, discounts, removed and corrected payments), Sold most; step back through earlier days
