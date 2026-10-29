@@ -2,6 +2,8 @@
 // implements them; use cases never import Dexie or browser APIs directly.
 
 import type { Category, ItemOverride, MenuItem, MenuProfile } from "../domain/menu";
+import type { DrawerEntry } from "../domain/drawer";
+import type { Expense } from "../domain/expense";
 import type { BusinessDate, Order, OrderLine, OutOfStock, Payment } from "../domain/order";
 import type { DiningTable } from "../domain/tables";
 
@@ -70,6 +72,40 @@ export interface OrderRepository {
   write(changes: readonly OrderChange[]): Promise<void>;
 }
 
+/** Money that went out, from `since` on. Deleted records excluded. */
+export type ExpenseSnapshot = { expenses: Expense[] };
+
+export type ExpenseChange = { table: "expenses"; record: Expense; op: "put" | "remove" };
+
+export interface ExpenseRepository {
+  /** Emits now, then after every change: this device, other tabs, sync. */
+  subscribe(since: BusinessDate, onChange: (snapshot: ExpenseSnapshot) => void): () => void;
+  /** All changes land together or none do. */
+  write(changes: readonly ExpenseChange[]): Promise<void>;
+}
+
+/** Everything one trading day is made of, to read its numbers. Read-only. */
+export type DaySnapshot = {
+  /** Every order that belongs to the day, paid or not. */
+  orders: Order[];
+  lines: OrderLine[];
+  payments: Payment[];
+  expenses: Expense[];
+  /** What the cash box started with and held, for this day and the day before (which carries in). */
+  drawer: DrawerEntry[];
+};
+
+export interface DayRepository {
+  subscribe(day: BusinessDate, onChange: (snapshot: DaySnapshot) => void): () => void;
+}
+
+export type DrawerChange = { table: "drawer"; record: DrawerEntry; op: "put" | "remove" };
+
+export interface DrawerRepository {
+  /** Stating the same kind for the same day again replaces it. */
+  write(changes: readonly DrawerChange[]): Promise<void>;
+}
+
 export interface Clock {
   now(): number;
 }
@@ -83,6 +119,9 @@ export interface Ports {
   network: NetworkStatus;
   menu: MenuRepository;
   orders: OrderRepository;
+  expenses: ExpenseRepository;
+  days: DayRepository;
+  drawer: DrawerRepository;
   ids: IdGenerator;
   clock: Clock;
 }

@@ -1,0 +1,7 @@
+{
+  "name": "tap2chef-e2e",
+  "private": true,
+  "type": "module",
+  "description": "Browser scripts: run the dev server on :5199 (cd client && npx vite --port 5199), then node day.mjs | node bill2.mjs <name> <w> <h> <light|dark> | node menu.mjs <name> <w> <h> <light|dark>. Screenshots land in e2e/shots (git-ignored); read every one.",
+  "dependencies": { "playwright": "^1.50.0" }
+}

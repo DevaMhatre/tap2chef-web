@@ -2,6 +2,9 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { PortsProvider } from "./usecases/PortsProvider";
 import type { Ports } from "./usecases/ports";
 import { dexieMenuRepository } from "./infrastructure/db/dexieMenuRepository";
+import { dexieDayRepository } from "./infrastructure/db/dexieDayRepository";
+import { dexieDrawerRepository } from "./infrastructure/db/dexieDrawerRepository";
+import { dexieExpenseRepository } from "./infrastructure/db/dexieExpenseRepository";
 import { dexieOrderRepository } from "./infrastructure/db/dexieOrderRepository";
 import { dexieSyncRepository } from "./infrastructure/db/dexieSyncRepository";
 import { newId } from "./infrastructure/id";
@@ -9,7 +12,7 @@ import { browserNetworkStatus } from "./infrastructure/network";
 import AppShell from "./ui/AppShell";
 import { CompletionProvider } from "./ui/design-system/Completion";
 import { UndoToastProvider } from "./ui/design-system/UndoToast";
-import ComingSoon from "./ui/pages/ComingSoon";
+import ExpensesPage from "./ui/pages/ExpensesPage";
 import MenuPage from "./ui/pages/MenuPage";
 import OrderPage from "./ui/pages/OrderPage";
 import OrdersPage from "./ui/pages/OrdersPage";
@@ -24,6 +27,9 @@ const ports: Ports = {
   network: browserNetworkStatus,
   menu: dexieMenuRepository,
   orders: dexieOrderRepository,
+  expenses: dexieExpenseRepository,
+  days: dexieDayRepository,
+  drawer: dexieDrawerRepository,
   ids: { newId },
   clock: { now: Date.now },
 };
@@ -43,10 +49,7 @@ export default function App() {
               <Route path="orders/settled" element={<SettledPage />} />
               <Route path="orders/:orderId" element={<OrderPage />} />
               <Route path="menu" element={<MenuPage />} />
-              <Route
-                path="expenses"
-                element={<ComingSoon title="Expenses">Daily expenses paid by cash or UPI.</ComingSoon>}
-              />
+              <Route path="expenses" element={<ExpensesPage />} />
               <Route path="today" element={<Today />} />
               <Route path="*" element={<Navigate to="/tables" replace />} />
             </Route>

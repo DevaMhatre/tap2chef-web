@@ -1,6 +1,22 @@
 // In-memory ports for use-case tests. Not imported by the app.
 import { applyChanges } from "./applyChanges";
-import type { Clock, IdGenerator, MenuChange, MenuRepository, MenuSnapshot, OrderChange, OrderRepository, OrderSnapshot } from "./ports";
+import type {
+  Clock,
+  DayRepository,
+  DaySnapshot,
+  DrawerChange,
+  DrawerRepository,
+  ExpenseChange,
+  ExpenseRepository,
+  ExpenseSnapshot,
+  IdGenerator,
+  MenuChange,
+  MenuRepository,
+  MenuSnapshot,
+  OrderChange,
+  OrderRepository,
+  OrderSnapshot,
+} from "./ports";
 
 export function fakeIds(): IdGenerator {
   let next = 0;
@@ -92,4 +108,48 @@ export function fakeOrderRepository(initial: Partial<OrderSnapshot> = {}) {
       };
     },
   };
+}
+
+export function fakeExpenseRepository(initial: Partial<ExpenseSnapshot> = {}) {
+  let snapshot: ExpenseSnapshot = { expenses: [], ...initial };
+  const listeners = new Set<(snapshot: ExpenseSnapshot) => void>();
+  const writes: ExpenseChange[][] = [];
+
+  const repository: ExpenseRepository = {
+    subscribe(_since, onChange) {
+      listeners.add(onChange);
+      queueMicrotask(() => onChange(snapshot));
+      return () => listeners.delete(onChange);
+    },
+    async write(changes) {
+      writes.push([...changes]);
+      snapshot = applyChanges(snapshot, changes);
+      listeners.forEach((l) => l(snapshot));
+    },
+  };
+
+  return { repository, writes, current: () => snapshot };
+}
+
+/** A day's records the test sets; asked for another day, it answers an empty one. */
+export function fakeDayRepository(days: Record<string, Partial<DaySnapshot>> = {}) {
+  const asked: string[] = [];
+  const repository: DayRepository = {
+    subscribe(day, onChange) {
+      asked.push(day);
+      queueMicrotask(() => onChange({ orders: [], lines: [], payments: [], expenses: [], drawer: [], ...days[day] }));
+      return () => undefined;
+    },
+  };
+  return { repository, asked };
+}
+
+export function fakeDrawerRepository() {
+  const writes: DrawerChange[][] = [];
+  const repository: DrawerRepository = {
+    async write(changes) {
+      writes.push([...changes]);
+    },
+  };
+  return { repository, writes };
 }

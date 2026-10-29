@@ -10,6 +10,7 @@ import {
   canRemove,
   closeBill,
   correctPayment,
+  dayAfter,
   dayBefore,
   defaultProfile,
   floorOf,
@@ -361,5 +362,14 @@ describe("out today", () => {
     const records = [{ id: outOfStockId(item, DAY), itemId: item, businessDate: DAY }];
     expect(outOn(records, DAY).has(item)).toBe(true);
     expect(outOn(records, "2026-10-30" as BusinessDate).has(item)).toBe(false);
+  });
+});
+
+describe("dayAfter", () => {
+  it("steps over month and year ends", () => {
+    expect(dayAfter("2026-10-29" as BusinessDate)).toBe("2026-10-30");
+    expect(dayAfter("2026-10-31" as BusinessDate)).toBe("2026-11-01");
+    expect(dayAfter("2026-12-31" as BusinessDate)).toBe("2027-01-01");
+    expect(dayAfter(dayBefore("2026-03-01" as BusinessDate))).toBe("2026-03-01");
   });
 });

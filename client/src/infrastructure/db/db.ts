@@ -35,6 +35,7 @@ export const SYNCED_TABLES = [
   "diningTables",
   "outOfStock",
   "payments",
+  "drawerEntries",
 ] as const;
 
 export type SyncedTable = (typeof SYNCED_TABLES)[number];
@@ -79,4 +80,15 @@ db.version(3).stores({
 // two devices taking parts of one bill both count.
 db.version(4).stores({
   payments: "id, tenantId, orderId, updatedAt",
+});
+
+// Step 7: expenses are read by the trading day they belong to (the old
+// index was by creation time, which a backdated expense would not match).
+db.version(5).stores({
+  expenses: "id, tenantId, businessDate, updatedAt",
+});
+
+// Step 7c: what the cash box started with and held, one record per fact per day.
+db.version(6).stores({
+  drawerEntries: "id, tenantId, businessDate, updatedAt",
 });

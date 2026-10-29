@@ -33,6 +33,11 @@ export function dayBefore(day: BusinessDate): BusinessDate {
   return toBusinessDate(new Date(year, month - 1, date - 1));
 }
 
+export function dayAfter(day: BusinessDate): BusinessDate {
+  const [year, month, date] = day.split("-").map(Number) as [number, number, number];
+  return toBusinessDate(new Date(year, month - 1, date + 1));
+}
+
 // ---------------------------------------------------------------- orders
 
 export type OrderChannel = { type: "dineIn"; tableId: TableId } | { type: "takeaway"; token: number };

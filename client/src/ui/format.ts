@@ -1,4 +1,5 @@
 import type { Paise } from "../domain/money";
+import { dayBefore, type BusinessDate } from "../domain/order";
 
 const inr = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -36,3 +37,24 @@ export function formatSentAgo(since: number, now: number): string {
   const waited = formatWaited(since, now);
   return waited === "Just now" ? "sent just now" : `sent ${waited} ago`;
 }
+
+/** Money that may be below zero: "−₹120". */
+export const formatSigned = (amount: number): string =>
+  amount < 0 ? `\u2212${formatPrice(-amount as Paise)}` : formatPrice(amount as Paise);
+
+const dayOf = (day: BusinessDate) => {
+  const [year, month, date] = day.split("-").map(Number) as [number, number, number];
+  return new Date(year, month - 1, date);
+};
+const shortDay = new Intl.DateTimeFormat("en-IN", { weekday: "short", day: "numeric", month: "short" });
+const longDay = new Intl.DateTimeFormat("en-IN", { weekday: "long", day: "numeric", month: "long" });
+
+/** "Today", "Yesterday", else "Wed 28 Oct". */
+export function dayLabel(day: BusinessDate, today: BusinessDate): string {
+  if (day === today) return "Today";
+  if (day === dayBefore(today)) return "Yesterday";
+  return shortDay.format(dayOf(day)).replace(",", "");
+}
+
+/** "Thursday 29 October". */
+export const formatDay = (day: BusinessDate): string => longDay.format(dayOf(day)).replace(",", "");

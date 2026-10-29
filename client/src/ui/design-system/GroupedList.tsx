@@ -96,3 +96,16 @@ export function ListRow({ leading, trailing, detail, children, className = "", .
 export function ListNote({ children }: { children: ReactNode }) {
   return <div className="px-4 py-3 text-[15px] text-muted">{children}</div>;
 }
+
+/** A fact in a list, not a control: a label, a quiet second line, a value on the right. */
+export function ListFact({ label, detail, value, strong }: { label: ReactNode; detail?: ReactNode; value: ReactNode; strong?: boolean }) {
+  return (
+    <div className="flex min-h-11 items-center gap-3 px-4 py-3 text-[17px]">
+      <span className="min-w-0 flex-1">
+        <span className="block truncate">{label}</span>
+        {detail && <span className="block truncate text-[13px] text-muted">{detail}</span>}
+      </span>
+      <span className={`shrink-0 tabular-nums ${strong ? "font-bold" : "font-semibold"}`}>{value}</span>
+    </div>
+  );
+}

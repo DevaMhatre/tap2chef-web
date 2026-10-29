@@ -69,7 +69,7 @@ function toOrderState(status: unknown, value: unknown): OrderState | undefined {
   return { status: "settled", billedAt: value.billedAt, settledAt: value.settledAt, subtotal: value.subtotal as Paise, ...extra };
 }
 
-function toPayment(r: StoredRecord): Payment | undefined {
+export function toPayment(r: StoredRecord): Payment | undefined {
   if (!isText(r.orderId) || !isPaise(r.amount) || r.amount === 0 || !isTime(r.receivedAt)) return undefined;
   if (r.correctedAt !== undefined && !isTime(r.correctedAt)) return undefined;
   if (r.removedAt !== undefined && !isTime(r.removedAt)) return undefined;
@@ -86,7 +86,7 @@ function toPayment(r: StoredRecord): Payment | undefined {
   return { ...base, method: "upi", ...(r.ref !== undefined && { ref: r.ref }) };
 }
 
-function toOrder(r: StoredRecord): Order | undefined {
+export function toOrder(r: StoredRecord): Order | undefined {
   const channel = toChannel(r.channel);
   if (!channel || !isText(r.profileId) || !isDate(r.businessDate) || !isTime(r.openedAt)) return undefined;
   const state = toOrderState(r.status, r.state);
@@ -116,7 +116,7 @@ function toLineState(value: unknown): LineState | undefined {
   return { status: "voided", ...sent, voidedAt: value.voidedAt, ...(value.reason !== undefined && { reason: value.reason as VoidReason }) };
 }
 
-function toLine(r: StoredRecord): OrderLine | undefined {
+export function toLine(r: StoredRecord): OrderLine | undefined {
   const state = toLineState(r.state);
   if (!state || !isText(r.orderId) || !isText(r.itemId) || !isText(r.name)) return undefined;
   if (typeof r.diet !== "string" || !DIETS.includes(r.diet)) return undefined;
