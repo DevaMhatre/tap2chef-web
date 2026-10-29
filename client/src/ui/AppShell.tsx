@@ -8,8 +8,10 @@ import {
   MdPayments,
   MdInsights,
   MdCheckCircle,
+  MdCloudDone,
 } from "react-icons/md";
 import { useDeviceSession } from "../usecases/useSignIn";
+import { useSync } from "../usecases/useSync";
 import { AccountSheet } from "./features/account/AccountSheet";
 
 const NAV: { to: string; label: string; icon: IconType }[] = [
@@ -30,23 +32,25 @@ const tabClass = ({ isActive }: { isActive: boolean }) =>
     isActive ? "text-primary" : "text-muted"
   }`;
 
-// Sync doesn't exist yet, so an "unsynced" count would only ever grow and an
-// "Offline" warning would warn about nothing — the app works the same either
-// way. Until sync lands, say the one thing that's true: the work is safe here.
-// useSyncStatus is kept for when there is something to report. The badge is
-// also the door to the account: where the work is kept is what it talks about.
+// Where the work is kept, and nothing more: "on this device" until it has
+// reached the account, then "online". No count of waiting changes and no
+// "Offline" warning: the app works the same either way, and a number that
+// grows while the internet is down reads as a fault. The badge is also the
+// door to the account, since that is what it talks about.
 function SavedBadge() {
   const session = useDeviceSession();
+  const kept = useSync(Boolean(session));
   const [open, setOpen] = useState(false);
+  const Icon = kept === "online" ? MdCloudDone : MdCheckCircle;
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} className="group -my-1.5 inline-flex min-h-11 items-center">
         <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2.5 py-1 text-xs font-semibold text-success transition-transform group-active:scale-[0.96]">
-          <MdCheckCircle className="text-sm" aria-hidden />
-          Saved on this device
+          <Icon className="text-sm" aria-hidden />
+          {kept === "online" ? "Saved online" : "Saved on this device"}
         </span>
       </button>
-      <AccountSheet open={open} session={session} onClose={() => setOpen(false)} />
+      <AccountSheet open={open} session={session} kept={kept} onClose={() => setOpen(false)} />
     </>
   );
 }

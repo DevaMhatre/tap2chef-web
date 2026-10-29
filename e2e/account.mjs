@@ -45,7 +45,7 @@ for (const scheme of ["light", "dark"]) {
     await page.getByText("Vegetables · ₹340 noted").waitFor();
     const before = await meta(page);
 
-    await page.getByRole("button", { name: "Saved on this device" }).click();
+    await page.getByRole("button", { name: /^Saved / }).click();
     await page.getByRole("dialog", { name: "Keep a Copy Safe" }).waitFor();
     await shot("1-email");
     await page.getByLabel("Email").fill("owner@");
@@ -83,7 +83,7 @@ for (const scheme of ["light", "dark"]) {
 
     check(await page.getByRole("button", { name: "Done" }).isVisible() && !(await page.getByRole("button", { name: "Cancel" }).isVisible()), `${tag}: once signed in, the sheet closes with Done`);
     await page.getByRole("button", { name: "Done" }).click();
-    await page.getByRole("button", { name: "Saved on this device" }).click();
+    await page.getByRole("button", { name: /^Saved / }).click();
     await page.getByRole("dialog", { name: "Account" }).waitFor();
     check(await page.getByText(email).isVisible(), `${tag}: reopening says who is signed in`);
     await shot("6-account");
@@ -102,7 +102,7 @@ for (const scheme of ["light", "dark"]) {
   const { ctx, page, errors } = await open(360, 740, "light");
   await page.goto(`${BASE}/expenses`);
   await page.getByText("Nothing spent today").waitFor();
-  await page.getByRole("button", { name: "Saved on this device" }).click();
+  await page.getByRole("button", { name: /^Saved / }).click();
   await page.getByLabel("Email").fill(firstEmail);
   await page.getByRole("button", { name: "Send code" }).click();
   await page.getByText("Enter the code sent to").waitFor();
@@ -121,7 +121,7 @@ for (const scheme of ["light", "dark"]) {
   await page.goto(`${BASE}/expenses`);
   await page.getByText("Nothing spent today").waitFor();
   await ctx.setOffline(true);
-  await page.getByRole("button", { name: "Saved on this device" }).click();
+  await page.getByRole("button", { name: /^Saved / }).click();
   await page.getByLabel("Email").fill("someone@example.com");
   await page.getByRole("button", { name: "Send code" }).click();
   await page.getByText("Signing in needs the internet").waitFor();

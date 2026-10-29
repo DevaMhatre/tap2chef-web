@@ -48,3 +48,17 @@ export async function adoptSession({ session, token, scope }: SignedInDevice): P
     ]);
   });
 }
+
+/** The server no longer knows this device: back to keeping work on it alone. Nothing is lost. */
+export async function forgetSession(): Promise<void> {
+  await db.meta.bulkDelete([SESSION, TOKEN, CURSOR]);
+}
+
+const CURSOR = "syncCursor";
+
+/** Where the next pull starts: the last sync number this device has applied. */
+export async function syncCursor(): Promise<number> {
+  return Number((await db.meta.get(CURSOR))?.value ?? 0);
+}
+
+export const CURSOR_KEY = CURSOR;

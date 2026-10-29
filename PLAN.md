@@ -101,7 +101,7 @@ Brainstormed 2026-10-29 (real life: the owner's data lives on one phone; the rus
 - [x] 8a Domain + storage: `Account / Shop / Member / Role`, `can()`, owner / manager / staff presets, PIN rule; `tenantId` → `accountId` / `shopId` (Dexie v7), unused `settings` table dropped. Upgrade checked in Chrome: data written by the live build survives, and a tab left open on the old build keeps working — `ac755fa`
 - [x] 8b Server: tenancy gate (a query without `accountId` throws), `POST /api/sync/push` and `GET /api/sync/pull?shopId&since`, device tokens, `can()` per table, a client–server contract test; 25 tests including isolation and a push overtaking a slow one — `264f7bd`
 - [x] 8c Owner sign-in by email code: the "Saved on this device" pill opens "Keep a Copy Safe" → email → 6-digit code (signs in on the sixth digit) → the restaurant's name, only for a new owner → a completion moment. Server: codes hashed, 10 min, 5 tries counted atomically, used once, 30 s before another, rate limits in production; Resend in production, the console elsewhere; `npm run dev:memory` runs the API without MongoDB. Browser-checked at 360 / 820 / 1440, light and dark, offline, and a second phone joining. **Not to go live before 8d**: the sheet says the work is kept in the account, which is true only once sync runs — `71c2b93`
-- [ ] 8d Client sync engine: push outbox, pull since N, apply without re-queuing; poll ~3 s while visible. Push stamps the device's scope on any record without `accountId` (a tab still running the pre-8a build keeps writing `tenantId` records until it reloads)
+- [x] 8d Sync: the device pushes its outbox (one change per record, as it is now, 500 at a time), then pulls "changes since N" for its shop; a pulled record with an edit still waiting here keeps ours. A change is sent ~300 ms after it is made; a pull every 3 s while signed in, online and on screen. Shop records go under the device's shop (old-build and mid-sign-in rows included); one record the server refuses is set aside, never blocking the rest; a device the server no longer knows goes back to working on its own, losing nothing. The pill says "Saved online" or "Saved on this device". Two devices in Chrome: the waiter's Send reached the counter in 2.3 s, the counter's Bill reached the floor in 1.3 s, an expense noted offline arrived 2.3 s after reconnecting
 - [ ] 8e Add a device (QR / 6-digit code from the owner's phone); members with PINs; "by Ravi" on cancels and payments; screens gated by `can()`
 - [ ] API deployed behind nginx at `tap2chef.devamhatre.com/api`
 - [ ] Later: shop overrides table and a second-shop screen; subscriptions and billing
@@ -134,6 +134,8 @@ Newest change first within each group. Format: decision — reason (date).
 - A PIN identifies the person (name and attribution, not security), so it is refused when a colleague would guess it first: all one digit or a straight run (1111, 1234, 9876) (2026-10-29).
 - Presets: staff run the service (orders, payments, cancel a sent dish, out today, note an expense; every slip stays visible); a manager also discounts, corrects or removes payments and expenses, sees the day and edits menu and tables; only the owner manages people, devices, shops and the plan. A member who left keeps their name on old records and can do nothing (2026-10-29).
 - The server stores a synced record as the device sent it (one collection, keyed by account, table and id) and checks only whose it is and who may write that table; the rules for orders and payments live on the device. Server schemas per table would repeat the domain and change every month (2026-10-29).
+- Sync is push, then pull, every 3 s while on screen, plus a push ~300 ms after each change; no server push yet — for 2–4 devices polling is enough, and it works through any proxy (2026-10-29).
+- A record the server refuses (another shop's, not allowed) is set aside and logged, so it never blocks the outbox; the record stays on the device. A 401 signs the device out and keeps everything on it (2026-10-29).
 - Pushes for one account run one at a time and take a block of sync numbers, written in order: otherwise a quick push could overtake a slow one, and a device pulling in between would move its cursor past records not yet written (2026-10-29).
 - The server checks permissions against the member who signed the device in; who is holding it (the PIN) is checked on the device, as Square and Toast do. The account's menu can be written only by someone who works in all shops; a record never moves to another shop (2026-10-29).
 - The API runs on the owner's VPS behind nginx at `/api`, same origin as the PWA — no CORS, one certificate (2026-10-29).
@@ -212,7 +214,7 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 - Sheet actions: a **filled** pill commits (Save, Add), a **tinted** pill closes (Done), plain text leaves (Cancel) — never two filled buttons competing (2026-10-29).
 - Forgiveness over confirmation: destructive actions act at once with Undo (2026-10-29).
 - Calm confirmation (a tick, a haptic, a line where the eye already is), no confetti — 80 dishes of confetti is noise; save celebration for real milestones (2026-10-29).
-- Until sync exists, the header says only "Saved on this device" — a growing "unsynced" count and an "Offline" warning read as faults (2026-10-29).
+- The header pill says only where the work is: "Saved on this device" (signed out, offline, or not sent yet) or "Saved online". Never a count of waiting changes or an "Offline" warning: the app works the same either way, and a number that grows while the internet is down reads as a fault (2026-10-29).
 - Focus rings are neutral so red only ever means an error (2026-10-29).
 
 ---
@@ -242,13 +244,14 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 **Known gaps**
 - The VPS exposes the POS API (port 8000) and a Docker container (port 4000) directly to the internet, bypassing nginx and HTTPS — close with a firewall (owner's server, not this repo).
 - After 2026-11-11: remove the .cloud server blocks and `certbot delete --cert-name devamhatre.cloud` / `pos.devamhatre.cloud`, or renewals will warn by email.
-- `useDeviceStorage` is unused since Today became the day's numbers; delete it or put it behind a Settings screen. `useSyncStatus` / `useDeviceStorage` import `dexie-react-hooks` in the use-case layer — move behind subscribe-style ports.
-- Two devices opening the same table offline make two orders; the earliest is shown, the other is hidden until a merge exists (needs sync first).
+- A record set aside by the server stays on the device unsent, with only a console warning; nobody sees it. Fine while every device is the owner's; staff devices (8e) need it shown.
+- A device pushes shop records under the shop it works in: right while a device holds one shop; a device switching shops needs per-shop reads first (see below).
+- Two devices opening the same table offline make two orders; the earliest is shown, the other is hidden until a merge exists. Sync now makes this reachable: a waiter and the counter both starting table 4 while one is offline.
+- Two offline devices can give two takeaways the same token number.
 - Send has no kitchen output yet: no KOT print or kitchen screen until step 9 / sync.
 - Reads don't filter by shop yet: fine while a device holds one shop; needed (or one local database per shop) before an owner's device syncs two shops.
 - The server can't import the client's TypeScript: permissions and synced tables exist twice, kept equal by `server/tests/contract.test.js` until a shared package exists.
 - Signing in to an account with several shops picks the first one the owner works in; a shop picker comes with a second shop.
-- A write landing in the instant a sign-in re-tags the device could keep the old ids; 8d's push stamps the device's scope where it is missing or unknown.
 - Going live with 8c/8d needs on the VPS: `NODE_ENV=production`, `RESEND_API_KEY`, `MAIL_FROM` (devamhatre.com verified in Resend), and nginx proxying `/api`.
 - The push lock lives in one Node process; a second server instance would need a lock in the database.
 - Fine-grained permissions (removing a payment, a discount) are checked only on the device; the server checks per table.

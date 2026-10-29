@@ -9,16 +9,25 @@ import type { DeviceSession, Email } from "../domain/signIn";
 import type { Result } from "../domain/result";
 import type { DiningTable } from "../domain/tables";
 
-export interface SyncRepository {
-  /** Changes saved on this device and not yet pushed to the server. */
-  pendingChanges(): Promise<number>;
-  /** All records stored on this device, deleted ones included. */
-  storedRecords(): Promise<number>;
+export type SyncError = "offline" | "signedOut" | "failed";
+
+/** Sending this device's changes to the account and bringing everyone else's. */
+export interface SyncService {
+  /** Pushes what waits here, then pulls what changed elsewhere. Signed out, refuses at once. */
+  run(signal?: AbortSignal): Promise<Result<void, SyncError>>;
+  /** Emits how many changes wait to be sent, now and after every change. */
+  subscribeWaiting(onChange: (count: number) => void): () => void;
 }
 
 export interface NetworkStatus {
   subscribe(onChange: () => void): () => void;
   isOnline(): boolean;
+}
+
+/** Whether the app is on screen: a phone in a pocket shouldn't pull every few seconds. */
+export interface AppVisibility {
+  subscribe(onChange: () => void): () => void;
+  isVisible(): boolean;
 }
 
 /** The current shop's menu: account catalog plus this shop's overrides. Deleted records excluded. */
@@ -139,8 +148,9 @@ export interface IdGenerator {
 }
 
 export interface Ports {
-  sync: SyncRepository;
+  sync: SyncService;
   network: NetworkStatus;
+  visibility: AppVisibility;
   menu: MenuRepository;
   orders: OrderRepository;
   expenses: ExpenseRepository;

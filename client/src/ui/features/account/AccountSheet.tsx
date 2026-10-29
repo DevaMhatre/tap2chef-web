@@ -3,6 +3,7 @@ import { MdCheckCircle } from "react-icons/md";
 import type { DeviceSession } from "../../../domain/signIn";
 import { CODE_LENGTH } from "../../../domain/signIn";
 import { useSignIn, type SignIn, type SignInProblem } from "../../../usecases/useSignIn";
+import type { Kept } from "../../../usecases/useSync";
 import { Button } from "../../design-system/Button";
 import { TextField } from "../../design-system/Field";
 import { hapticSuccess } from "../../design-system/haptic";
@@ -21,22 +22,22 @@ const PROBLEMS: Record<SignInProblem, string> = {
   nameTooLong: "Keep it under 60 letters.",
 };
 
-type Props = { open: boolean; session: DeviceSession | null | undefined; onClose: () => void };
+type Props = { open: boolean; session: DeviceSession | null | undefined; kept: Kept; onClose: () => void };
 
 // Where the device's work is kept: on this phone only, or also in the owner's
 // account. Signed out, it is the way in; signed in, it says who. What it shows
 // is decided when it opens: signing in mid-way must not swap the sheet away
 // before its moment of completion.
-export function AccountSheet({ open, session, onClose }: Props) {
+export function AccountSheet({ open, session, kept, onClose }: Props) {
   const [opened, setOpened] = useState({ open: false, signIn: false, count: 0 });
   if (opened.open !== open) {
     setOpened({ open, signIn: open ? !session : opened.signIn, count: opened.count + (open ? 1 : 0) });
   }
 
-  if (opened.signIn) return <SignInSheet key={opened.count} open={open} onClose={onClose} />;
+  if (opened.signIn) return <SignInSheet key={opened.count} open={open} kept={kept} onClose={onClose} />;
   return (
     <Sheet open={open} onClose={onClose} title="Account" dismissLabel={null} action={<Done onClose={onClose} />}>
-      {session && <SignedIn session={session} />}
+      {session && <SignedIn session={session} kept={kept} />}
     </Sheet>
   );
 }
@@ -49,7 +50,12 @@ function Done({ onClose }: { onClose: () => void }) {
   );
 }
 
-function SignedIn({ session, fresh = false }: { session: DeviceSession; fresh?: boolean }) {
+const WHERE: Record<Kept, string> = {
+  online: "Your menu, bills and expenses are saved in your account.",
+  device: "Saved on this device for now. It goes to your account by itself when there is internet.",
+};
+
+function SignedIn({ session, kept, fresh = false }: { session: DeviceSession; kept: Kept; fresh?: boolean }) {
   return (
     <div className="flex flex-col items-center gap-1 pt-2 pb-2 text-center">
       <MdCheckCircle aria-hidden className={`mb-1 text-5xl text-success ${fresh ? "animate-[pop_420ms_cubic-bezier(0.34,1.56,0.64,1)]" : ""}`} />
@@ -59,12 +65,12 @@ function SignedIn({ session, fresh = false }: { session: DeviceSession; fresh?: 
       <p className="text-[15px] text-muted">
         <EmailText email={session.email} />
       </p>
-      <p className="mt-4 max-w-xs text-[15px] text-muted">Your menu, bills and expenses are kept in your account.</p>
+      <p className="mt-4 max-w-xs text-[15px] text-muted">{WHERE[kept]}</p>
     </div>
   );
 }
 
-function SignInSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+function SignInSheet({ open, kept, onClose }: { open: boolean; kept: Kept; onClose: () => void }) {
   const signIn = useSignIn();
   const { flow } = signIn;
   const done = flow.step === "done";
@@ -82,7 +88,7 @@ function SignInSheet({ open, onClose }: { open: boolean; onClose: () => void }) 
       action={done ? <Done onClose={onClose} /> : undefined}
     >
       {flow.step === "done" ? (
-        <SignedIn session={flow.session} fresh />
+        <SignedIn session={flow.session} kept={kept} fresh />
       ) : flow.step === "code" ? (
         <CodeStep signIn={signIn} email={flow.email} resendAt={flow.resendAt} />
       ) : flow.step === "name" ? (

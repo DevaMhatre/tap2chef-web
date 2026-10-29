@@ -1,4 +1,4 @@
-import type { NetworkStatus } from "../usecases/ports";
+import type { AppVisibility, NetworkStatus } from "../usecases/ports";
 
 export const browserNetworkStatus: NetworkStatus = {
   subscribe(onChange) {
@@ -10,4 +10,12 @@ export const browserNetworkStatus: NetworkStatus = {
     };
   },
   isOnline: () => navigator.onLine,
+};
+
+export const browserVisibility: AppVisibility = {
+  subscribe(onChange) {
+    document.addEventListener("visibilitychange", onChange);
+    return () => document.removeEventListener("visibilitychange", onChange);
+  },
+  isVisible: () => document.visibilityState === "visible",
 };

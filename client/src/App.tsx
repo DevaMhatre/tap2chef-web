@@ -6,10 +6,10 @@ import { dexieDayRepository } from "./infrastructure/db/dexieDayRepository";
 import { dexieDrawerRepository } from "./infrastructure/db/dexieDrawerRepository";
 import { dexieExpenseRepository } from "./infrastructure/db/dexieExpenseRepository";
 import { dexieOrderRepository } from "./infrastructure/db/dexieOrderRepository";
-import { dexieSyncRepository } from "./infrastructure/db/dexieSyncRepository";
 import { httpAccountService } from "./infrastructure/account/httpAccountService";
 import { newId } from "./infrastructure/id";
-import { browserNetworkStatus } from "./infrastructure/network";
+import { browserNetworkStatus, browserVisibility } from "./infrastructure/network";
+import { httpSync } from "./infrastructure/sync/httpSync";
 import AppShell from "./ui/AppShell";
 import { CompletionProvider } from "./ui/design-system/Completion";
 import { UndoToastProvider } from "./ui/design-system/UndoToast";
@@ -24,8 +24,9 @@ import Today from "./ui/pages/Today";
 // Composition root: the only place that knows which infrastructure backs
 // each port.
 const ports: Ports = {
-  sync: dexieSyncRepository,
+  sync: httpSync,
   network: browserNetworkStatus,
+  visibility: browserVisibility,
   menu: dexieMenuRepository,
   orders: dexieOrderRepository,
   expenses: dexieExpenseRepository,

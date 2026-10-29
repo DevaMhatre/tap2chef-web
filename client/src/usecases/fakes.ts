@@ -4,6 +4,10 @@ import type { DeviceSession } from "../domain/signIn";
 import { err, ok } from "../domain/result";
 import type {
   AccountService,
+  AppVisibility,
+  NetworkStatus,
+  SyncError,
+  SyncService,
   Clock,
   DayRepository,
   DaySnapshot,
@@ -207,4 +211,51 @@ export function fakeAccountService({ code = "123456", knownEmails = [] as string
       open();
     },
   };
+}
+
+/** A switch the test flips, for the network or the screen. */
+export function fakeSwitch(initial = true) {
+  let on = initial;
+  const listeners = new Set<() => void>();
+  const subscribe = (l: () => void) => {
+    listeners.add(l);
+    return () => listeners.delete(l);
+  };
+  return {
+    network: { subscribe, isOnline: () => on } as NetworkStatus,
+    visibility: { subscribe, isVisible: () => on } as AppVisibility,
+    set(value: boolean) {
+      on = value;
+      listeners.forEach((l) => l());
+    },
+  };
+}
+
+/** Counts runs; `waiting` is what the outbox holds; `next` is what the next run answers. */
+export function fakeSyncService() {
+  let waiting = 0;
+  const listeners = new Set<(n: number) => void>();
+  const state = { runs: 0, next: undefined as SyncError | undefined, inFlight: 0, maxInFlight: 0, slow: 0 };
+  const service: SyncService = {
+    async run() {
+      state.runs += 1;
+      state.inFlight += 1;
+      state.maxInFlight = Math.max(state.maxInFlight, state.inFlight);
+      if (state.slow) await new Promise((r) => setTimeout(r, state.slow));
+      state.inFlight -= 1;
+      if (state.next) return err(state.next);
+      setWaiting(0);
+      return ok(undefined);
+    },
+    subscribeWaiting(onChange) {
+      listeners.add(onChange);
+      onChange(waiting);
+      return () => listeners.delete(onChange);
+    },
+  };
+  function setWaiting(n: number) {
+    waiting = n;
+    listeners.forEach((l) => l(n));
+  }
+  return { service, state, setWaiting };
 }

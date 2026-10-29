@@ -312,6 +312,7 @@ cd client && npm run lint
 cd client && npm test           # vitest
 cd client && npm run build      # tsc + vite build + service worker
 cd server && npm test           # jest + supertest, in-memory Mongo
+cd server && npm run dev:memory # the API on a throwaway database (codes print here)
 ```
 
 Before reporting work complete: typecheck, lint, tests and build all pass.

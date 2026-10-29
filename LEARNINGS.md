@@ -163,6 +163,10 @@ wrong and how we now avoid it**.
 - *What happened:* the 8b test for "a pull never passes a change still being written" passed with the per-account lock removed. supertest sends a request only when something awaits it, so the "concurrent" pushes never overlapped, and the race never happened.
 - *Apply:* for every lock, ref guard or ordering rule, remove it once and watch its test fail. Make a race deterministic (hold one side back with a spy), never hope the timing hits it.
 
+**1d. A test can pass for a reason other than the rule it names** (2026-10-29)
+- *What happened:* the 8d test "keeps our version of a record we changed and haven't sent yet" passed with the rule removed: push runs before pull, so our version was already on the server and came back last. The rule only matters for an edit landing between push and pull; a new test puts one exactly there.
+- *Apply:* the guard-removal check (1c) applies to rules, not just locks. When a test survives the removal, find the case where the rule is the only thing standing, and test that.
+
 **2. A test fixture must fail loudly** (2026-10-29)
 - *What happened:* A fixture fell back to a default when its setup failed,
   which hid a wrong amount.
