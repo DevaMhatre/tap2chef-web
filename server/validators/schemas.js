@@ -10,6 +10,8 @@ export const verifySchema = z.object({
   code: z.string().regex(/^\d{6}$/, "The code is 6 digits"),
   /** The ids the device already files its records under; a new account adopts them. */
   device: z.object({ accountId: z.string().min(1).max(100), shopId: z.string().min(1).max(100) }),
+  /** "Android phone": how this phone shows in the owner's list. */
+  label: z.string().trim().max(40).optional(),
   restaurantName: z.string().trim().min(1).max(60).optional(),
 });
 
@@ -37,6 +39,13 @@ export const pushSchema = z.object({
     )
     .min(1, "Nothing to push")
     .max(MAX_CHANGES, `At most ${MAX_CHANGES} changes at once`),
+});
+
+export const joinSchema = z.object({
+  code: z.string().regex(/^\d{6}$/, "The code is 6 digits"),
+  /** False (or missing) only asks whose code it is. */
+  confirm: z.boolean().optional(),
+  label: z.string().trim().max(40).optional(),
 });
 
 export const pullQuerySchema = z.object({

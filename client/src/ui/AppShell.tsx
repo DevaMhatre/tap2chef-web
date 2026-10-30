@@ -15,6 +15,10 @@ import { useRestaurantName, useShowsTables } from "../usecases/useRestaurant";
 import { useDeviceSession } from "../usecases/useSignIn";
 import { useSync } from "../usecases/useSync";
 import { AccountSheet } from "./features/account/AccountSheet";
+import type { Phone } from "../domain/phones";
+import { useRemovePhone } from "../usecases/usePhones";
+import { AddPhoneSheet } from "./features/restaurant/AddPhoneSheet";
+import { RemovePhoneSheet } from "./features/restaurant/RemovePhoneSheet";
 import { RestaurantSheet } from "./features/restaurant/RestaurantSheet";
 import { SafeCopyCard } from "./features/setup/SafeCopyCard";
 
@@ -62,19 +66,34 @@ function SavedBadge() {
 // The restaurant's name is the owner's door to what they told the setup. The
 // chevron says it opens something, as a title menu does.
 function RestaurantDoor({ name, className }: { name: string; className: string }) {
-  const [open, setOpen] = useState(false);
+  // One sheet at a time: adding or removing a phone takes the restaurant
+  // sheet's place, and removing comes back to it.
+  const [sheet, setSheet] = useState<{ kind: "restaurant" } | { kind: "add" } | { kind: "remove"; phone: Phone }>();
+  const remove = useRemovePhone();
   return (
     <>
       <button
         type="button"
         aria-haspopup="dialog"
-        onClick={() => setOpen(true)}
+        onClick={() => setSheet({ kind: "restaurant" })}
         className={`group -my-1.5 flex min-h-11 min-w-0 items-center gap-0.5 text-left ${className}`}
       >
         <span className="min-w-0 truncate font-extrabold tracking-tight transition-opacity group-active:opacity-60">{name}</span>
         <MdExpandMore aria-hidden className="shrink-0 text-xl text-muted" />
       </button>
-      <RestaurantSheet open={open} onClose={() => setOpen(false)} />
+      <RestaurantSheet
+        open={sheet?.kind === "restaurant"}
+        onClose={() => setSheet(undefined)}
+        onAddPhone={() => setSheet({ kind: "add" })}
+        onRemovePhone={(phone) => setSheet({ kind: "remove", phone })}
+      />
+      <AddPhoneSheet open={sheet?.kind === "add"} restaurantName={name} onClose={() => setSheet(undefined)} />
+      <RemovePhoneSheet
+        phone={sheet?.kind === "remove" ? sheet.phone : undefined}
+        restaurantName={name}
+        onRemove={remove}
+        onClose={() => setSheet(sheet?.kind === "remove" ? { kind: "restaurant" } : undefined)}
+      />
     </>
   );
 }

@@ -1,5 +1,4 @@
 import crypto from "node:crypto";
-import jwt from "jsonwebtoken";
 import Account from "../models/Account.js";
 import Brand from "../models/Brand.js";
 import LoginCode from "../models/LoginCode.js";
@@ -7,11 +6,11 @@ import Member from "../models/Member.js";
 import Shop from "../models/Shop.js";
 import User from "../models/User.js";
 import { mailer } from "../lib/mailer.js";
+import { signInDevice } from "../lib/deviceTokens.js";
 
 export const CODE_LIFETIME_MS = 10 * 60 * 1000;
 export const RESEND_AFTER_MS = 30 * 1000;
 export const MAX_ATTEMPTS = 5;
-const DEVICE_TOKEN_LIFETIME = "365d";
 
 const hashCode = (email, code) =>
   crypto.createHmac("sha256", process.env.JWT_SECRET).update(`${email}:${code}`).digest("hex");
@@ -21,8 +20,6 @@ const sameHash = (a, b) => a.length === b.length && crypto.timingSafeEqual(Buffe
 const refuse = (res, status, reason, message, extra = {}) =>
   res.status(status).json({ success: false, reason, message, ...extra });
 
-export const deviceToken = (accountId, memberId) =>
-  jwt.sign({ kind: "device", accountId, memberId }, process.env.JWT_SECRET, { expiresIn: DEVICE_TOKEN_LIFETIME });
 
 export async function requestCode(req, res) {
   const { email } = req.body;
@@ -84,7 +81,7 @@ async function signIn({ accountId, memberId }) {
 }
 
 export async function verifyCode(req, res) {
-  const { email, code, device, restaurantName } = req.body;
+  const { email, code, device, restaurantName, label } = req.body;
 
   // Counting the try and reading the code are one step, so guesses sent all
   // at once still count one by one.
@@ -113,10 +110,12 @@ export async function verifyCode(req, res) {
   const session = membership ? await signIn(membership) : await signUp(email, device, restaurantName);
   if (!session) return refuse(res, 403, "noAccess", "This email no longer has access to a restaurant.");
 
+  // Signed in with the owner's own email: the owner's phone.
+  const { token } = await signInDevice({ accountId: session.accountId, shopId: session.shopId, memberId: session.memberId, kind: "owner", label });
   res.json({
     success: true,
     data: {
-      token: deviceToken(session.accountId, session.memberId),
+      token,
       accountId: session.accountId,
       brandId: session.brandId,
       shopId: session.shopId,

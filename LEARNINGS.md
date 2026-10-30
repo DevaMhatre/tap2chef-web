@@ -151,6 +151,10 @@ wrong and how we now avoid it**.
 - *What happened:* offline, the setup's account screen kept "Send code" as the filled button and put the way that works ("set up now") in plain text below. Seen in the offline screenshot.
 - *Apply:* when the state changes what can work (offline, signed out), the filled button changes with it, and controls that can't work wait out of sight.
 
+**6. An aborted request rejects; catch it** (2026-10-30)
+- *What happened:* the phone list and "Add a Phone" abort their fetch when the sheet closes. The adapter rethrows an abort, the hooks' `.then` had no `.catch`, and the browser logged "signal is aborted without reason". Unit tests never closed a sheet mid-request; the browser script's console check did.
+- *Apply:* every call made with an `AbortSignal` ends in a catch that ignores the abort and surfaces anything else. A browser script fails on any console error.
+
 **4. The browser validates before we do** (2026-10-29)
 - *What happened:* `type="email"` made the browser stop the form with its own bubble, so our message never showed.
 - *Apply:* forms with our own validation get `noValidate`; the browser script checks that our words appear.

@@ -18,6 +18,9 @@
   --color-scrim: rgb(0 0 0 / 0.35);
   /* A control's chosen part, lifted off its track (segment thumb, switch off-track) */
   --color-raised: #ffffff;
+  /* A QR code stays dark on white in both themes: cameras read it that way */
+  --color-qr-ink: #000000;
+  --color-qr-paper: #ffffff;
 }
 
 @media (prefers-color-scheme: dark) {

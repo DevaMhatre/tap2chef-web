@@ -33,6 +33,17 @@ export function formatWaited(since: number, now: number): string {
   return rest === 0 ? `${Math.floor(minutes / 60)} h` : `${Math.floor(minutes / 60)} h ${rest} min`;
 }
 
+/** When a phone last asked the server: "active now", "5 min ago", "yesterday", "3 days ago". */
+export function formatLastSeen(at: number, now: number): string {
+  const minutes = Math.max(0, Math.floor((now - at) / 60_000));
+  if (minutes < 2) return "active now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.floor(hours / 24);
+  return days === 1 ? "yesterday" : `${days} days ago`;
+}
+
 export function formatSentAgo(since: number, now: number): string {
   const waited = formatWaited(since, now);
   return waited === "Just now" ? "sent just now" : `sent ${waited} ago`;

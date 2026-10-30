@@ -8,10 +8,16 @@ const TOKEN = "deviceToken";
 
 export type SignedInDevice = { session: DeviceSession; token: string; scope: Scope };
 
+/** A session stored before linked phones existed was always an email sign-in. */
+function readSession(value: string): DeviceSession {
+  const stored = JSON.parse(value) as Record<string, unknown>;
+  return ("via" in stored ? stored : { via: "email", ...stored }) as DeviceSession;
+}
+
 /** Emits who the device is signed in as (null when nobody), now and after every change. */
 export function subscribeSession(onChange: (session: DeviceSession | null) => void): () => void {
   const subscription = liveQuery(() => db.meta.get(SESSION)).subscribe({
-    next: (row) => onChange(row ? (JSON.parse(row.value) as DeviceSession) : null),
+    next: (row) => onChange(row ? readSession(row.value) : null),
     error: (error) => console.error(error),
   });
   return () => subscription.unsubscribe();
@@ -54,6 +60,22 @@ export async function adoptSession({ session, token, scope }: SignedInDevice): P
 /** The server no longer knows this device: back to keeping work on it alone. Nothing is lost. */
 export async function forgetSession(): Promise<void> {
   await db.meta.bulkDelete([SESSION, TOKEN, CURSOR]);
+}
+
+/** Keeps the server's newer token for this device. */
+export async function renewToken(token: string): Promise<void> {
+  await db.meta.put({ key: TOKEN, value: token });
+}
+
+/**
+ * This phone was removed from the restaurant: the restaurant's records go
+ * from it, with its sign-in and setup, and it starts again as a new phone.
+ */
+export async function clearRestaurant(): Promise<void> {
+  const tables = [db.meta, db.outbox, ...SYNCED_TABLES.map((name) => db[name])];
+  await db.transaction("rw", tables, async () => {
+    for (const table of tables) await table.clear();
+  });
 }
 
 const CURSOR = "syncCursor";

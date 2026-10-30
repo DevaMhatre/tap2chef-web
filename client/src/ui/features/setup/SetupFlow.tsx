@@ -97,6 +97,7 @@ export function Screen({
 
 function AccountScreen({ setup }: Step<"account">) {
   const { signIn, online } = setup;
+  const navigate = useNavigate();
   // Online, a code that doesn't come or a failing server mustn't hold the
   // owner here. Offline, setting up is the one thing that works, so it is
   // the filled button and the email waits for the internet.
@@ -124,6 +125,12 @@ function AccountScreen({ setup }: Step<"account">) {
       {online && stuck && (
         <Button variant="plain" className="mt-2 w-full" onClick={() => void setup.later()}>
           Set up now, sign in later
+        </Button>
+      )}
+      {/* A waiter's phone joins the owner's restaurant instead of setting one up. */}
+      {signIn.flow.step === "email" && (
+        <Button variant="plain" className="mt-6 w-full" onClick={() => navigate("/join")}>
+          Joining a restaurant? Enter its code
         </Button>
       )}
     </Screen>

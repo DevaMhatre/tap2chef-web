@@ -13,6 +13,8 @@ export type RestaurantDetails =
       state: "ready";
       name: string;
       choice: ServiceChoice;
+      /** A phone linked with a code sees these but can't change them: only the owner's phone does. */
+      canEdit: boolean;
       problem?: RestaurantDetailsProblem;
       /** Something differs from what is stored: Save has something to do. */
       changed: boolean;
@@ -43,12 +45,14 @@ export function useRestaurantDetails(): RestaurantDetails {
   const name = typed.name ?? stored.name;
   const choice = typed.choice ?? choiceOf(stored.service);
   const service = readService(choice);
-  const changed = name.trim() !== stored.name || !service.ok || service.value !== stored.service || details === null;
+  const canEdit = session?.via !== "link";
+  const changed = canEdit && (name.trim() !== stored.name || !service.ok || service.value !== stored.service || details === null);
 
   return {
     state: "ready",
     name,
     choice,
+    canEdit,
     problem,
     changed,
     typeName(text) {
@@ -60,6 +64,7 @@ export function useRestaurantDetails(): RestaurantDetails {
       setProblem(undefined);
     },
     async save() {
+      if (!canEdit) return false;
       const readName = readRestaurantName(name);
       if (!readName.ok) {
         setProblem(readName.error === "empty" ? "noName" : "nameTooLong");

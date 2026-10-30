@@ -4,6 +4,7 @@ import app from "../app.js";
 import { mailer } from "../lib/mailer.js";
 import Account from "../models/Account.js";
 import Brand from "../models/Brand.js";
+import Device from "../models/Device.js";
 import LoginCode from "../models/LoginCode.js";
 import Member from "../models/Member.js";
 import Shop from "../models/Shop.js";
@@ -74,7 +75,7 @@ describe("a new owner", () => {
     const first = await verify({ email: "new@example.com", code }).expect(200);
     expect(first.body.data).toEqual({ needsName: true });
 
-    const res = await verify({ email: "new@example.com", code, restaurantName: " Sharma Dhaba " }).expect(200);
+    const res = await verify({ email: "new@example.com", code, restaurantName: " Sharma Dhaba ", label: "iPhone" }).expect(200);
     expect(res.body.data).toMatchObject({ ...device, restaurantName: "Sharma Dhaba", email: "new@example.com" });
 
     expect(await Account.findById("dev-acc").lean()).toMatchObject({ name: "Sharma Dhaba" });
@@ -86,6 +87,8 @@ describe("a new owner", () => {
       { accountId: "dev-acc", memberId: owner._id },
     ]);
     await pullWith(res.body.data).expect(200);
+    // Signed in with the owner's email: the owner's phone, named as it said.
+    expect(await Device.find({ accountId: "dev-acc" }).lean()).toEqual([expect.objectContaining({ kind: "owner", label: "iPhone", shopId: "dev-shop" })]);
   });
 
   it("gets fresh ids if the device's are already taken", async () => {

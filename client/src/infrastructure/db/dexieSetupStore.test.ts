@@ -62,3 +62,19 @@ describe("dexieShopRepository", () => {
     expect(await next(dexieShopRepository.subscribe, () => true)).toBeNull();
   });
 });
+
+describe("a session stored before linked phones", () => {
+  it("reads as the owner's email sign-in", async () => {
+    const { subscribeSession } = await import("./deviceSession");
+    await db.meta.put({ key: "session", value: JSON.stringify({ email: "o@x.com", restaurantName: "R" }) });
+    const session = await new Promise((resolve) => {
+      const stop = subscribeSession((s) => {
+        if (s) {
+          stop();
+          resolve(s);
+        }
+      });
+    });
+    expect(session).toEqual({ via: "email", email: "o@x.com", restaurantName: "R" });
+  });
+});

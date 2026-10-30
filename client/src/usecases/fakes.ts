@@ -1,5 +1,6 @@
 // In-memory ports for use-case tests. Not imported by the app.
 import { applyChanges } from "./applyChanges";
+import type { Phone } from "../domain/phones";
 import type { SetupProgress, ShopDetails } from "../domain/setup";
 import type { DeviceSession } from "../domain/signIn";
 import { err, ok } from "../domain/result";
@@ -27,6 +28,7 @@ import type {
   LocalSetup,
   SetupStore,
   ShopRepository,
+  PhonesService,
 } from "./ports";
 
 export function fakeIds(): IdGenerator {
@@ -172,10 +174,16 @@ export function fakeDrawerRepository() {
 export function fakeAccountService({ code = "123456", knownEmails = [] as string[], offline = false } = {}) {
   let session: DeviceSession | null = null;
   const listeners = new Set<(s: DeviceSession | null) => void>();
-  const calls = { requestCode: [] as string[], signIn: [] as { email: string; code: string; name?: string }[] };
+  const calls = { requestCode: [] as string[], signIn: [] as { email: string; code: string; name?: string }[], join: [] as string[] };
   let gate: Promise<void> | undefined;
   let open = () => {};
-  const state = { offline, tooSoon: 0, names: new Map<string, string>(knownEmails.map((e) => [e, "Sharma Dhaba"])) };
+  const state = {
+    offline,
+    tooSoon: 0,
+    names: new Map<string, string>(knownEmails.map((e) => [e, "Sharma Dhaba"])),
+    /** Live codes on some owner's phone, and the restaurant each adds a phone to. */
+    joinCodes: new Map<string, string>([["482913", "Sharma Dhaba"]]),
+  };
 
   const service: AccountService = {
     subscribe(onChange) {
@@ -197,9 +205,24 @@ export function fakeAccountService({ code = "123456", knownEmails = [] as string
       if (typed !== code) return err("wrongCode");
       const known = state.names.get(email);
       if (!known && !name) return ok({ kind: "needsName" });
-      session = { email, restaurantName: known ?? name! };
+      session = { via: "email", email, restaurantName: known ?? name! };
       listeners.forEach((l) => l(session));
       return ok({ kind: "signedIn", session });
+    },
+    async previewJoin(code) {
+      if (state.offline) return err("offline");
+      return state.joinCodes.has(code) ? ok({ restaurantName: state.joinCodes.get(code)! }) : err("wrongCode");
+    },
+    async join(code) {
+      calls.join.push(code);
+      if (gate) await gate;
+      if (state.offline) return err("offline");
+      const restaurantName = state.joinCodes.get(code);
+      if (!restaurantName) return err("wrongCode");
+      state.joinCodes.delete(code);
+      session = { via: "link", restaurantName };
+      listeners.forEach((l) => l(session));
+      return ok(session);
     },
   };
 
@@ -313,4 +336,25 @@ export function fakeSetupStore({ progress = null as SetupProgress | null, empty 
     },
   };
   return { store, state, current: () => local };
+}
+
+/** The server's list of phones, a code at a time. `offline` makes every call fail as offline. */
+export function fakePhonesService(phones: Phone[] = [], now: () => number = Date.now) {
+  const state = { phones: [...phones], offline: false, codes: 0 };
+  const service: PhonesService = {
+    async linkCode() {
+      if (state.offline) return err("offline");
+      state.codes += 1;
+      return ok({ code: String(100000 + state.codes), expiresAt: now() + 10 * 60 * 1000 });
+    },
+    async list() {
+      return state.offline ? err("offline") : ok([...state.phones]);
+    },
+    async remove(id) {
+      if (state.offline) return err("offline");
+      state.phones = state.phones.filter((p) => p.id !== id);
+      return ok(undefined);
+    },
+  };
+  return { service, state };
 }

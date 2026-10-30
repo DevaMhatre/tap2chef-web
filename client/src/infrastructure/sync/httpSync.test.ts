@@ -11,11 +11,11 @@ import { httpSync } from "./httpSync";
 function fakeServer() {
   const log: (WireChange & { seq: number })[] = [];
   const pushes: WireChange[][] = [];
-  const state = { status: 200, refuse: new Set<string>(), pageSize: 500, onPush: undefined as (() => Promise<void>) | undefined, onPull: undefined as (() => Promise<void>) | undefined };
+  const state = { status: 200, reason: undefined as string | undefined, token: undefined as string | undefined, refuse: new Set<string>(), pageSize: 500, onPush: undefined as (() => Promise<void>) | undefined, onPull: undefined as (() => Promise<void>) | undefined };
   const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status });
 
   const fetch = vi.fn(async (url: string, init: RequestInit) => {
-    if (state.status !== 200) return json(state.status, { success: false });
+    if (state.status !== 200) return json(state.status, { success: false, reason: state.reason });
     if (url.startsWith("/api/sync/push")) {
       const { changes } = JSON.parse(init.body as string) as { changes: WireChange[] };
       pushes.push(changes);
@@ -28,7 +28,7 @@ function fakeServer() {
     const since = Number(new URL(url, "http://x").searchParams.get("since"));
     const newer = log.filter((c) => c.seq > since);
     const page = newer.slice(0, state.pageSize);
-    return json(200, { success: true, data: { changes: page, seq: page.at(-1)?.seq ?? since, more: newer.length > page.length } });
+    return json(200, { success: true, data: { changes: page, seq: page.at(-1)?.seq ?? since, more: newer.length > page.length, ...(state.token ? { token: state.token } : {}) } });
   });
   /** A change another device made. */
   const elsewhere = (c: WireChange) => log.push({ ...c, seq: log.length + 1 });
@@ -43,7 +43,7 @@ const writeAll = (writes: { table: RecordWrite["table"]; record: { id: string; [
 
 async function signIn() {
   const scope = await getScope();
-  await adoptSession({ session: { email: "o@x.com" as never, restaurantName: "R" }, token: "tok", scope });
+  await adoptSession({ session: { via: "email", email: "o@x.com" as never, restaurantName: "R" }, token: "tok", scope });
   return scope;
 }
 
@@ -206,5 +206,32 @@ describe("httpSync", () => {
     await httpSync.run();
     await vi.waitFor(() => expect(counts.at(-1)).toBe(0));
     stop();
+  });
+
+  it("clears the restaurant from a phone the owner removed, and it starts again as new", async () => {
+    await signIn();
+    await writeAll([{ table: "items", record: { id: "i1" }, op: "put" }]);
+    await db.meta.put({ key: "setup", value: JSON.stringify({ step: "done" }) });
+    server.state.status = 401;
+    server.state.reason = "removed";
+    expect(await httpSync.run()).toEqual({ ok: false, error: "signedOut" });
+    expect(await db.items.count()).toBe(0);
+    expect(await db.outbox.count()).toBe(0);
+    expect(await db.meta.count()).toBe(0);
+  });
+
+  it("keeps a signed-out phone's work, unlike a removed one", async () => {
+    await signIn();
+    await writeAll([{ table: "items", record: { id: "i1" }, op: "put" }]);
+    server.state.status = 401;
+    await httpSync.run();
+    expect(await db.items.count()).toBe(1);
+  });
+
+  it("keeps the token the server renews for a phone signed in before phones had records", async () => {
+    await signIn();
+    server.state.token = "renewed";
+    await httpSync.run();
+    expect(await db.meta.get("deviceToken")).toEqual({ key: "deviceToken", value: "renewed" });
   });
 });

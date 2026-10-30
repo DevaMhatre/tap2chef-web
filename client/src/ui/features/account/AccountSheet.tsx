@@ -63,7 +63,7 @@ function SignedIn({ session, kept, fresh = false }: { session: DeviceSession; ke
       {fresh && <p className="text-[17px] font-semibold">{session.restaurantName}</p>}
       {/* Wraps rather than cuts: an email is read in full or not at all. */}
       <p className="text-[15px] text-muted">
-        <EmailText email={session.email} />
+        {session.via === "email" ? <EmailText email={session.email} /> : "Joined with a code from the owner's phone"}
       </p>
       <p className="mt-4 max-w-xs text-[15px] text-muted">{WHERE[kept]}</p>
     </div>

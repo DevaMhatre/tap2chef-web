@@ -3,6 +3,7 @@ import Account from "../../models/Account.js";
 import Brand from "../../models/Brand.js";
 import Member from "../../models/Member.js";
 import Shop from "../../models/Shop.js";
+import { signInDevice } from "../../lib/deviceTokens.js";
 
 /** An account with one brand, one shop and its owner, as sign-up makes them. */
 export async function createAccount(name = "Sharma Dhaba") {
@@ -31,5 +32,13 @@ export async function addMember(accountId, { name, roleId, scope = { kind: "allS
   return Member.create({ _id: `m${n}`, accountId, name, roleId, scope });
 }
 
-export const deviceToken = (accountId, memberId) =>
+/** A token as phones had before they had records of their own (no device in it). */
+export const legacyToken = (accountId, memberId) =>
   jwt.sign({ kind: "device", accountId, memberId }, process.env.JWT_SECRET, { expiresIn: "1h" });
+
+/** A phone of the account's first shop (or `shopId`), signed in as `memberId`, and its token. */
+export async function phoneToken(accountId, memberId, { kind = "owner", shopId, label = "Android phone" } = {}) {
+  const shop = shopId ?? (await Shop.findOne({ accountId }).sort({ createdAt: 1 }).lean())._id;
+  const { device, token } = await signInDevice({ accountId, shopId: shop, memberId, kind, label });
+  return { token, deviceId: device._id };
+}

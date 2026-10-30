@@ -3,6 +3,7 @@
 
 import type { Category, ItemOverride, MenuItem, MenuProfile } from "../domain/menu";
 import type { DrawerEntry } from "../domain/drawer";
+import type { Phone } from "../domain/phones";
 import type { Expense } from "../domain/expense";
 import type { BusinessDate, Order, OrderLine, OutOfStock, Payment } from "../domain/order";
 import type { SetupProgress, ShopDetails } from "../domain/setup";
@@ -138,6 +139,23 @@ export interface AccountService {
     restaurantName: string | undefined,
     signal?: AbortSignal,
   ): Promise<Result<SignInOutcome, SignInError>>;
+  /** Whose restaurant a code would add this phone to, without using the code. */
+  previewJoin(code: string, signal?: AbortSignal): Promise<Result<{ restaurantName: string }, JoinError>>;
+  /** Uses the code: this phone joins the restaurant and works in it at once. */
+  join(code: string, signal?: AbortSignal): Promise<Result<DeviceSession, JoinError>>;
+}
+
+export type JoinError = "offline" | "wrongCode" | "failed";
+
+export type PhonesError = "offline" | "notOwnerPhone" | "failed";
+
+/** The owner's phone adding and removing the restaurant's phones. Needs the internet. */
+export interface PhonesService {
+  /** A fresh 6-digit code; any earlier one stops working. */
+  linkCode(signal?: AbortSignal): Promise<Result<{ code: string; expiresAt: number }, PhonesError>>;
+  list(signal?: AbortSignal): Promise<Result<Phone[], PhonesError>>;
+  /** Signs a phone out for good; it clears the restaurant from itself. */
+  remove(id: string, signal?: AbortSignal): Promise<Result<void, PhonesError>>;
 }
 
 /** The restaurant as its owner described it, on every phone of the shop. */
@@ -183,6 +201,7 @@ export interface Ports {
   days: DayRepository;
   drawer: DrawerRepository;
   account: AccountService;
+  phones: PhonesService;
   shop: ShopRepository;
   setup: SetupStore;
   ids: IdGenerator;

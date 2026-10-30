@@ -2,13 +2,16 @@ import { liveQuery } from "dexie";
 import { err, ok } from "../../domain/result";
 import type { SyncService } from "../../usecases/ports";
 import { db, type OutboxRow, type StoredRecord } from "../db/db";
-import { CURSOR_KEY, deviceToken, forgetSession, syncCursor } from "../db/deviceSession";
+import { clearRestaurant, CURSOR_KEY, deviceToken, forgetSession, renewToken, syncCursor } from "../db/deviceSession";
 import { getScope, type Scope } from "../db/repo";
 import { fromWire, toWire, type WireChange } from "./wire";
 
 export const PUSH_BATCH = 500;
 
 type Call = { status: number; body: Record<string, unknown> } | undefined;
+
+/** The device was removed from the restaurant (not merely signed out). */
+const removed = (reply: Call) => reply?.status === 401 && reply.body.reason === "removed";
 
 async function call(path: string, token: string, init: RequestInit, signal?: AbortSignal): Promise<Call> {
   try {
@@ -18,6 +21,8 @@ async function call(path: string, token: string, init: RequestInit, signal?: Abo
       signal,
     });
     const body = await response.json().catch(() => ({}));
+    // A phone signed in before phones had records is handed a token naming its record.
+    if (response.ok && typeof body.data?.token === "string") await renewToken(body.data.token);
     return { status: response.status, body: response.ok ? (body.data ?? {}) : body };
   } catch (error) {
     if (signal?.aborted) throw error;
@@ -28,7 +33,7 @@ async function call(path: string, token: string, init: RequestInit, signal?: Abo
 const post = (changes: WireChange[], token: string, signal?: AbortSignal) =>
   call("/sync/push", token, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ changes }) }, signal);
 
-type Outcome = "done" | "offline" | "signedOut" | "failed";
+type Outcome = "done" | "offline" | "signedOut" | "removed" | "failed";
 
 /**
  * Sends the oldest waiting changes, one per record, as the record is now. The
@@ -49,6 +54,7 @@ async function pushOnce(token: string, scope: Scope, signal?: AbortSignal): Prom
   if (sendable.length > 0) {
     const reply = await post(sendable.map((s) => s.change), token, signal);
     if (!reply) return "offline";
+    if (removed(reply)) return "removed";
     if (reply.status === 401) return "signedOut";
     if (reply.status >= 500 || reply.status === 429) return "failed";
     if (reply.status !== 200) {
@@ -56,6 +62,7 @@ async function pushOnce(token: string, scope: Scope, signal?: AbortSignal): Prom
       // each alone, and set aside only what it still refuses.
       for (const { entry, change } of sendable) {
         const alone = await post([change], token, signal);
+        if (removed(alone)) return "removed";
         if (!alone || alone.status === 401 || alone.status >= 500) return alone?.status === 401 ? "signedOut" : "failed";
         if (alone.status !== 200) console.warn(`Sync refused ${entry.table} ${entry.recordId}:`, alone.body.message);
         await db.outbox.bulkDelete(covered(entry).map((e) => e.seq!));
@@ -73,6 +80,7 @@ async function pullOnce(token: string, scope: Scope, signal?: AbortSignal): Prom
   const since = await syncCursor();
   const reply = await call(`/sync/pull?shopId=${encodeURIComponent(scope.shopId)}&since=${since}`, token, { method: "GET" }, signal);
   if (!reply) return "offline";
+  if (removed(reply)) return "removed";
   if (reply.status === 401) return "signedOut";
   if (reply.status !== 200) return "failed";
 
@@ -108,7 +116,9 @@ export const httpSync: SyncService = {
     const pushed = await drain(() => pushOnce(token, scope, signal), signal);
     const outcome = pushed === "done" ? await drain(() => pullOnce(token, scope, signal), signal) : pushed;
     if (outcome === "signedOut") await forgetSession();
-    return outcome === "done" ? ok(undefined) : err(outcome);
+    // Removed by the owner: its copy of the restaurant goes, unsent work too.
+    if (outcome === "removed") await clearRestaurant();
+    return outcome === "done" ? ok(undefined) : err(outcome === "removed" ? "signedOut" : outcome);
   },
 
   subscribeWaiting(onChange) {

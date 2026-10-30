@@ -39,6 +39,13 @@ export const PRESET_ROLES = [
   { id: "staff", name: "Staff", permissions: STAFF },
 ];
 
+/**
+ * What only a phone signed in with the owner's own email may do: a phone
+ * linked by a code works, but never manages phones, people, the restaurant or
+ * the plan, whoever linked it.
+ */
+export const OWNER_PHONE_ONLY = ["devices.manage", "members.manage", "shops.manage", "account.manage"];
+
 /** Whether a member may do something in a shop. An unknown role grants nothing. */
 export function can(member, permission, shopId, roles = PRESET_ROLES) {
   if (member.removedAt != null) return false;

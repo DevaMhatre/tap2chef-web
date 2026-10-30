@@ -40,13 +40,13 @@ describe("httpAccountService", () => {
 
     const watching = sessions();
     const result = await httpAccountService.signIn(email, "123456", "Sharma Dhaba");
-    expect(result).toEqual({ ok: true, value: { kind: "signedIn", session: { email, restaurantName: "Sharma Dhaba" } } });
+    expect(result).toEqual({ ok: true, value: { kind: "signedIn", session: { via: "email", email, restaurantName: "Sharma Dhaba" } } });
     expect(JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string)).toEqual({
-      email, code: "123456", device: scope, restaurantName: "Sharma Dhaba",
+      email, code: "123456", device: scope, restaurantName: "Sharma Dhaba", label: "Phone",
     });
     expect(await db.orders.get("o1")).toMatchObject({ accountId: scope.accountId, shopId: scope.shopId });
     expect(await db.meta.get("deviceToken")).toEqual({ key: "deviceToken", value: "t" });
-    expect((await watching).at(-1)).toEqual({ email, restaurantName: "Sharma Dhaba" });
+    expect((await watching).at(-1)).toEqual({ via: "email", email, restaurantName: "Sharma Dhaba" });
   });
 
   it("brings the device's records into an existing account", async () => {
@@ -101,5 +101,21 @@ describe("httpAccountService", () => {
     vi.stubGlobal("navigator", { onLine: true });
     vi.stubGlobal("fetch", vi.fn(async () => { throw new TypeError("Failed to fetch"); }));
     expect(await httpAccountService.signIn(email, "123456", undefined)).toEqual({ ok: false, error: "offline" });
+  });
+
+  it("joins a restaurant with a code: asks first, then signs in as a linked phone", async () => {
+    vi.stubGlobal("fetch", reply(200, { data: { restaurantName: "Sharma Dhaba" } }));
+    expect(await httpAccountService.previewJoin("482913")).toEqual({ ok: true, value: { restaurantName: "Sharma Dhaba" } });
+
+    const data = { token: "t", accountId: "acc", brandId: "acc", shopId: "shop", restaurantName: "Sharma Dhaba" };
+    const fetch = reply(200, { data });
+    vi.stubGlobal("fetch", fetch);
+    expect(await httpAccountService.join("482913")).toEqual({ ok: true, value: { via: "link", restaurantName: "Sharma Dhaba" } });
+    expect(JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string)).toEqual({ code: "482913", confirm: true, label: "Phone" });
+    expect(await getScope()).toEqual({ accountId: "acc", brandId: "acc", shopId: "shop" });
+    expect(await db.meta.get("deviceToken")).toEqual({ key: "deviceToken", value: "t" });
+
+    vi.stubGlobal("fetch", reply(400, { success: false, reason: "wrongCode" }));
+    expect(await httpAccountService.join("000000")).toEqual({ ok: false, error: "wrongCode" });
   });
 });

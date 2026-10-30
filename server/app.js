@@ -4,6 +4,7 @@ import helmet from "helmet";
 import "dotenv/config";
 
 import authRoutes from "./routes/auth.js";
+import deviceRoutes from "./routes/devices.js";
 import syncRoutes from "./routes/sync.js";
 
 const app = express();
@@ -32,6 +33,7 @@ app.get("/api/health", (req, res) => {
 });
 
 app.use("/api/auth", authRoutes);
+app.use("/api/devices", deviceRoutes);
 
 // 404 handler
 app.use((req, res) => {

@@ -1,6 +1,7 @@
+import { phoneLabel } from "../../domain/phones";
 import { err, ok } from "../../domain/result";
 import type { Email } from "../../domain/signIn";
-import type { AccountService, SignInError } from "../../usecases/ports";
+import type { AccountService, JoinError, SignInError } from "../../usecases/ports";
 import { adoptSession, subscribeSession } from "../db/deviceSession";
 import { getScope } from "../db/repo";
 
@@ -41,7 +42,7 @@ export const httpAccountService: AccountService = {
 
   async signIn(email, code, restaurantName, signal) {
     const device = await getScope();
-    const reply = await post("/auth/verify", { email, code, device, restaurantName }, signal);
+    const reply = await post("/auth/verify", { email, code, device, restaurantName, label: phoneLabel(navigator.userAgent ?? "") }, signal);
     if (!reply) return err("offline");
     if (reply.status !== 200) {
       const reason = SIGN_IN_REASONS.find((r) => r === reply.body.reason);
@@ -55,8 +56,30 @@ export const httpAccountService: AccountService = {
     }
     // A server from before brands names none: the account's first brand has its id.
     const scope = { accountId, brandId: typeof brandId === "string" ? brandId : accountId, shopId };
-    const session = { email, restaurantName: name };
+    const session = { via: "email" as const, email, restaurantName: name };
     await adoptSession({ session, token, scope });
     return ok({ kind: "signedIn", session });
   },
+
+  async previewJoin(code, signal) {
+    const reply = await post("/devices/join", { code }, signal);
+    if (!reply) return err("offline");
+    if (reply.status !== 200 || typeof reply.body.restaurantName !== "string") return err(joinError(reply));
+    return ok({ restaurantName: reply.body.restaurantName });
+  },
+
+  async join(code, signal) {
+    const reply = await post("/devices/join", { code, confirm: true, label: phoneLabel(navigator.userAgent ?? "") }, signal);
+    if (!reply) return err("offline");
+    const { token, accountId, brandId, shopId, restaurantName } = reply.body;
+    if (reply.status !== 200) return err(joinError(reply));
+    if (typeof token !== "string" || typeof accountId !== "string" || typeof shopId !== "string" || typeof restaurantName !== "string") {
+      return err("failed");
+    }
+    const session = { via: "link" as const, restaurantName };
+    await adoptSession({ session, token, scope: { accountId, brandId: typeof brandId === "string" ? brandId : accountId, shopId } });
+    return ok(session);
+  },
 };
+
+const joinError = (reply: Reply): JoinError => (reply.body.reason === "wrongCode" ? "wrongCode" : "failed");

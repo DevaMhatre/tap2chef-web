@@ -6,7 +6,7 @@ import Member from "../models/Member.js";
 import SyncRecord from "../models/SyncRecord.js";
 import { PULL_LIMIT } from "../controllers/syncController.js";
 import { connect, closeDatabase, clearDatabase } from "./helpers/db.js";
-import { addBrand, addMember, addShop, createAccount, deviceToken } from "./helpers/tenancy.js";
+import { addBrand, addMember, addShop, createAccount, legacyToken, phoneToken } from "./helpers/tenancy.js";
 
 beforeAll(connect);
 afterEach(clearDatabase);
@@ -23,7 +23,7 @@ const order = (id, shopId, over = {}) => ({ table: "orders", record: { id, shopI
 
 async function ownerDevice(name) {
   const { accountId, brandId, shopId, owner } = await createAccount(name);
-  return { accountId, brandId, shopId, device: as(deviceToken(accountId, owner._id)) };
+  return { accountId, brandId, shopId, device: as((await phoneToken(accountId, owner._id)).token) };
 }
 
 describe("tenant isolation", () => {
@@ -91,14 +91,14 @@ describe("devices", () => {
     await as("garbage").pull(shopId).expect(401);
     const userToken = jwt.sign({ id: owner._id, role: "owner" }, process.env.JWT_SECRET);
     await as(userToken).pull(shopId).expect(401);
-    await as(deviceToken(accountId, "nobody")).pull(shopId).expect(401);
+    await as(legacyToken(accountId, "nobody")).pull(shopId).expect(401);
   });
 
   it("signs out a device whose member has left", async () => {
     const { accountId, shopId } = await createAccount();
     const ravi = await addMember(accountId, { name: "Ravi", roleId: "staff" });
     await Member.updateOne({ accountId, _id: ravi._id }, { removedAt: 5 });
-    await as(deviceToken(accountId, ravi._id)).pull(shopId).expect(401);
+    await as((await phoneToken(accountId, ravi._id)).token).pull(shopId).expect(401);
   });
 });
 
@@ -240,7 +240,7 @@ describe("permissions", () => {
   async function memberDevice(roleId, scope) {
     const { accountId, shopId } = await createAccount("A");
     const m = await addMember(accountId, { name: "Ravi", roleId, scope: scope?.(shopId) });
-    return { accountId, shopId, device: as(deviceToken(accountId, m._id)) };
+    return { accountId, shopId, device: as((await phoneToken(accountId, m._id)).token) };
   }
 
   it("lets staff run the service but not change the menu, the tables or the drawer", async () => {

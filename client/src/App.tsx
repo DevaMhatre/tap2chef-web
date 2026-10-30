@@ -12,6 +12,7 @@ import { dexieOrderRepository } from "./infrastructure/db/dexieOrderRepository";
 import { dexieSetupStore } from "./infrastructure/db/dexieSetupStore";
 import { dexieShopRepository } from "./infrastructure/db/dexieShopRepository";
 import { httpAccountService } from "./infrastructure/account/httpAccountService";
+import { httpPhonesService } from "./infrastructure/account/httpPhonesService";
 import { newId } from "./infrastructure/id";
 import { browserNetworkStatus, browserVisibility } from "./infrastructure/network";
 import { httpSync } from "./infrastructure/sync/httpSync";
@@ -39,6 +40,7 @@ const ports: Ports = {
   days: dexieDayRepository,
   drawer: dexieDrawerRepository,
   account: httpAccountService,
+  phones: httpPhonesService,
   shop: dexieShopRepository,
   setup: dexieSetupStore,
   ids: { newId },

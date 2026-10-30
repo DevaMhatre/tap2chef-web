@@ -6,8 +6,16 @@ import { err, ok, type Result } from "./result";
 
 export type Email = string & { readonly __brand: "Email" };
 
-/** Who this device is signed in as. */
-export type DeviceSession = { email: Email; restaurantName: string };
+/**
+ * How this device is signed in: the owner's own phone, by their email, or a
+ * phone linked with a code shown on the owner's phone. Only the owner's own
+ * phone manages phones and the restaurant.
+ */
+export type DeviceSession =
+  | { via: "email"; email: Email; restaurantName: string }
+  | { via: "link"; restaurantName: string };
+
+export const isOwnerPhone = (session: DeviceSession | null | undefined): boolean => session?.via === "email";
 
 /** Loose on purpose: the code that arrives is the real check. */
 export function readEmail(text: string): Result<Email, "badEmail"> {

@@ -41,9 +41,9 @@ describe("useSignIn", () => {
     expect(server.calls.signIn.at(-1)).toEqual({ email: "owner@example.com", code: "123456", name: "Sharma Dhaba" });
     expect(result.current.signIn.flow).toEqual({
       step: "done",
-      session: { email: "owner@example.com", restaurantName: "Sharma Dhaba" },
+      session: { via: "email", email: "owner@example.com", restaurantName: "Sharma Dhaba" },
     });
-    expect(result.current.session).toEqual({ email: "owner@example.com", restaurantName: "Sharma Dhaba" });
+    expect(result.current.session).toEqual({ via: "email", email: "owner@example.com", restaurantName: "Sharma Dhaba" });
   });
 
   it("signs a known owner straight in, without asking the name", async () => {
