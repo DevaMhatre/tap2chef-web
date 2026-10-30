@@ -4,6 +4,7 @@ import { keyBetween, placeAt } from "../domain/ordering";
 import {
   activeOrderAt,
   activeOrders,
+  joinTableOrders,
   addToDraft,
   businessDate,
   closeBill,
@@ -379,6 +380,23 @@ export function createOrderDesk(repository: OrderRepository, ids: IdGenerator, c
       }),
   };
 
+  // Two phones that each started the same table wrote two orders: join them
+  // the moment this phone sees both. Planned against the latest records, so
+  // a join already written by another phone plans nothing.
+  const planJoin = (s: OrderSnapshot): Plan<void> => {
+    const joined = joinTableOrders(activeOrders(s.orders, s.lines, s.payments), s.payments);
+    const changes = [
+      ...joined.orders.map((record) => put({ table: "orders", record })),
+      ...joined.lines.map((record) => put({ table: "lines", record })),
+      ...joined.payments.map((record) => put({ table: "payments", record })),
+    ];
+    return { changes, result: undefined };
+  };
+  const joinTables = (s: OrderSnapshot) => {
+    if (planJoin(s).changes.length === 0) return;
+    run("joinTables", planJoin).catch((error) => console.error("Couldn't join a table's orders", error));
+  };
+
   return {
     // A subscription kept open past the day's start still holds yesterday's
     // records; every rule filters by day, so that is harmless.
@@ -386,6 +404,7 @@ export function createOrderDesk(repository: OrderRepository, ids: IdGenerator, c
       repository.subscribe(today(), (snapshot) => {
         writer.observe(snapshot);
         onChange(snapshot);
+        joinTables(snapshot);
       }),
     commands,
   };

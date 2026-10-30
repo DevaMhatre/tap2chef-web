@@ -104,3 +104,49 @@ describe("useOrders", () => {
     expect(a().bill.payments.map((p) => ready(result.current).canRemove(a(), p))).toEqual([false, false]);
   });
 });
+
+describe("several phones in one restaurant", () => {
+  const open = (id: string, openedAt: number, channel: Order["channel"] = { type: "dineIn", tableId: t1 }): Order => ({
+    id: id as OrderId,
+    channel,
+    profileId: "dine" as ProfileId,
+    businessDate: TODAY,
+    openedAt,
+    state: { status: "open" },
+  });
+
+  function render(initial: Parameters<typeof fakeOrderRepository>[0]) {
+    const orders = fakeOrderRepository({ tables: [{ id: t1, name: "1", sortKey: "1" }], ...initial });
+    const ports = { orders: orders.repository, ids: fakeIds(), clock: fakeClock(new Date(2026, 9, 29, 22, 0).getTime()).clock } as Partial<Ports> as Ports;
+    const wrapper = ({ children }: { children: ReactNode }) => <PortsProvider ports={ports}>{children}</PortsProvider>;
+    return { orders, ...renderHook(() => useOrders(), { wrapper }) };
+  }
+
+  it("joins two orders two phones started at one table into the earliest, once", async () => {
+    const { result, orders } = render({
+      orders: [open("counter", 50), open("waiter", 10)],
+      lines: [line("waiter"), line("counter")],
+      payments: [pay("p1", "counter", "cash", 5000)],
+    });
+    await waitFor(() => expect(ready(result.current).today.map((o) => o.order.id)).toEqual(["waiter"]));
+    const table = ready(result.current).today[0]!;
+    expect(table.lines.map((l) => l.id)).toEqual(["waiter-l", "counter-l"]);
+    expect(table.bill.paid).toBe(5000);
+    // Planned once, then nothing left to join.
+    await act(() => new Promise((r) => setTimeout(r, 20)));
+    expect(orders.writes).toHaveLength(1);
+  });
+
+  it("says a token two takeaways share, on both, and on no other", async () => {
+    const { result } = render({
+      orders: [open("a", 1, { type: "takeaway", token: 7 }), open("b", 2, { type: "takeaway", token: 7 }), open("c", 3, { type: "takeaway", token: 8 })],
+      lines: [line("a"), line("b"), line("c")],
+    });
+    await waitFor(() => expect(result.current.state).toBe("ready"));
+    expect(ready(result.current).today.map((o) => o.label)).toEqual([
+      { kind: "token", token: 7, shared: true },
+      { kind: "token", token: 7, shared: true },
+      { kind: "token", token: 8, shared: false },
+    ]);
+  });
+});

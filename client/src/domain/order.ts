@@ -432,6 +432,50 @@ export function floorOf(tables: readonly DiningTable[], active: readonly ActiveO
   return sortByOrder(tables).map((table) => ({ table, active: activeOrderAt(table.id, active) }));
 }
 
+/**
+ * A table has one bill. Two phones that each started an order at the same
+ * table (offline, or within the seconds before they synced) are joined: the
+ * later orders' dishes and payments move onto the earliest, which reopens if
+ * it was billed and gains a live dish. Every phone plans the same changes, so
+ * two phones joining at once agree. Empty when every table has one order.
+ */
+export function joinTableOrders(
+  active: readonly ActiveOrder[],
+  payments: readonly Payment[],
+): { orders: Order[]; lines: OrderLine[]; payments: Payment[] } {
+  const out = { orders: [] as Order[], lines: [] as OrderLine[], payments: [] as Payment[] };
+  const byTable = new Map<TableId, ActiveOrder[]>();
+  // `active` is in opening order, so each table's first is its earliest.
+  for (const a of active) {
+    if (a.order.channel.type !== "dineIn") continue;
+    byTable.set(a.order.channel.tableId, [...(byTable.get(a.order.channel.tableId) ?? []), a]);
+  }
+  for (const [, [first, ...later]] of byTable) {
+    if (!first || later.length === 0) continue;
+    const moved = later.flatMap((a) => a.lines).map((line) => ({ ...line, orderId: first.order.id }));
+    const laterIds = new Set(later.map((a) => a.order.id));
+    out.lines.push(...moved);
+    out.payments.push(...payments.filter((p) => laterIds.has(p.orderId)).map((p) => ({ ...p, orderId: first.order.id })));
+    if (moved.some(isLive)) {
+      const reopened = reopenForDishes(first.order);
+      if (reopened !== first.order) out.orders.push(reopened);
+    }
+  }
+  return out;
+}
+
+/** Tokens two or more of a day's takeaways share: shown, never renumbered (the customer heard it). */
+export function sharedTokens(orders: readonly Order[], day: BusinessDate): Set<number> {
+  const seen = new Set<number>();
+  const shared = new Set<number>();
+  for (const o of orders) {
+    if (o.businessDate !== day || o.channel.type !== "takeaway") continue;
+    if (seen.has(o.channel.token)) shared.add(o.channel.token);
+    seen.add(o.channel.token);
+  }
+  return shared;
+}
+
 /** Today's next takeaway token. Tokens are never reused within a day, even if cancelled. */
 export function nextToken(orders: readonly Order[], day: BusinessDate): number {
   const tokens = orders.flatMap((o) =>

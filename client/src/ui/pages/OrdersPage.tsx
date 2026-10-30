@@ -58,6 +58,8 @@ export default function OrdersPage() {
         onClick={() => open(summary)}
       >
         {shortOrderTitle(summary.label)}
+        {/* Two phones gave the same token: said, never renumbered (the customer heard it). */}
+        {summary.label.kind === "token" && summary.label.shared && <span className="font-semibold text-warning"> · twice</span>}
       </ListRow>
     );
   };

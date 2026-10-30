@@ -65,7 +65,7 @@ describe("useOrder", () => {
     const parcel = renderOrder({ kind: "takeaway", orderId: "new" as OrderId });
     await waitFor(() => expect(parcel.result.current.state).toBe("ready"));
     const take = ready(parcel.result.current);
-    expect(take.label).toEqual({ kind: "token", token: 1 });
+    expect(take.label).toEqual({ kind: "token", token: 1, shared: false });
     // Paneer Tikka is dine-in only.
     expect(take.dishes.map((d) => [d.item.name, d.pricing.price])).toEqual([["Dal Makhani", 20000]]);
   });
@@ -163,6 +163,6 @@ describe("useOrder", () => {
     await act(async () => {
       await ready(result.current).receive(input({ method: "upi", received: "200" }));
     });
-    expect(result.current).toEqual({ state: "settled", label: { kind: "token", token: 1 }, paid: 20000 });
+    expect(result.current).toEqual({ state: "settled", label: { kind: "token", token: 1, shared: false }, paid: 20000 });
   });
 });

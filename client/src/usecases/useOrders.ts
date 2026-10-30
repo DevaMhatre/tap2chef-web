@@ -5,6 +5,7 @@ import {
   counts,
   businessDate,
   settledOn,
+  sharedTokens,
   type ActiveOrder,
   type BillView,
   type OrderId,
@@ -21,12 +22,20 @@ import type { Undo } from "./orderDesk";
 import { usePorts } from "./PortsProvider";
 import { useOrderDesk } from "./useOrderDesk";
 
-/** How staff name an order: by its table, or by its token. */
-export type OrderLabel = { kind: "table"; name: string } | { kind: "token"; token: number };
+/**
+ * How staff name an order: by its table, or by its token. `shared`: another
+ * of the day's takeaways has the same token (two phones, seconds apart, or one
+ * offline). It is shown, never renumbered: the customer heard the number.
+ */
+export type OrderLabel = { kind: "table"; name: string } | { kind: "token"; token: number; shared: boolean };
 
-export function labelOf(active: Pick<ActiveOrder, "order">, tables: readonly DiningTable[]): OrderLabel {
+export function labelOf(
+  active: Pick<ActiveOrder, "order">,
+  tables: readonly DiningTable[],
+  shared: ReadonlySet<number> = new Set(),
+): OrderLabel {
   const { channel } = active.order;
-  if (channel.type === "takeaway") return { kind: "token", token: channel.token };
+  if (channel.type === "takeaway") return { kind: "token", token: channel.token, shared: shared.has(channel.token) };
   // A table removed on another device still names its order.
   return { kind: "table", name: tables.find((t) => t.id === channel.tableId)?.name ?? "?" };
 }
@@ -62,13 +71,18 @@ export function useOrders(): Orders {
   if (!snapshot) return { state: "loading" };
 
   const today = businessDate(clock.now());
+  const sharedOn = new Map<string, Set<number>>();
+  const shared = (order: { businessDate: typeof today }) => {
+    if (!sharedOn.has(order.businessDate)) sharedOn.set(order.businessDate, sharedTokens(snapshot.orders, order.businessDate));
+    return sharedOn.get(order.businessDate)!;
+  };
   const settled = settledOn(snapshot.orders, today).map((order) => {
     const lines = snapshot.lines.filter((l) => l.orderId === order.id);
-    return { order, lines, label: labelOf({ order }, snapshot.tables), bill: billOf(order, lines, snapshot.payments) };
+    return { order, lines, label: labelOf({ order }, snapshot.tables, shared(order)), bill: billOf(order, lines, snapshot.payments) };
   });
   const all = activeOrders(snapshot.orders, snapshot.lines, snapshot.payments).map((a) => ({
     ...a,
-    label: labelOf(a, snapshot.tables),
+    label: labelOf(a, snapshot.tables, shared(a.order)),
   }));
   return {
     state: "ready",

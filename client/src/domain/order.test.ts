@@ -14,6 +14,7 @@ import {
   dayBefore,
   defaultProfile,
   floorOf,
+  joinTableOrders,
   nextToken,
   orderTotal,
   outOfStockId,
@@ -24,6 +25,7 @@ import {
   reopenForDishes,
   sendDraft,
   settledOn,
+  sharedTokens,
   ticketOf,
   voidSent,
   withNote,
@@ -373,3 +375,61 @@ describe("dayAfter", () => {
     expect(dayAfter(dayBefore("2026-03-01" as BusinessDate))).toBe("2026-03-01");
   });
 });
+
+describe("joinTableOrders", () => {
+  const pay = (id: string, orderId: string): Payment =>
+    ({ id: id as PaymentId, orderId: orderId as OrderId, amount: paise(2000), receivedAt: 5, method: "cash" }) as Payment;
+  const t5 = { channel: { type: "dineIn" as const, tableId: "t5" as TableId } };
+
+  it("moves a later order's dishes and payments onto the table's earliest order", () => {
+    const lines = [
+      sent(draftLine("a", paneer, 1, "early"), "r1", 10),
+      sent(draftLine("b", roti, 2, "late"), "r2", 20),
+      draftLine("c", roti, 1, "late"),
+    ];
+    const payments = [pay("p1", "late")];
+    const active = activeOrders([order("late", { openedAt: 50 }), order("early", { openedAt: 10 })], lines, payments);
+    const joined = joinTableOrders(active, payments);
+    expect(joined.lines.map((l) => [l.id, l.orderId, l.state.status])).toEqual([["b", "early", "sent"], ["c", "early", "draft"]]);
+    expect(joined.lines[0]).toMatchObject({ quantity: 2, unitPrice: 2000 });
+    expect(joined.payments.map((p) => [p.id, p.orderId])).toEqual([["p1", "early"]]);
+    expect(joined.orders).toEqual([]);
+
+    // Once moved, the later order has nothing on it, and the table one bill.
+    const after = activeOrders(
+      [order("late", { openedAt: 50 }), order("early", { openedAt: 10 })],
+      [lines[0]!, ...joined.lines],
+      joined.payments,
+    );
+    expect(after.map((a) => [a.order.id, a.lines.length, a.bill.paid])).toEqual([["early", 3, 2000]]);
+    expect(joinTableOrders(after, joined.payments)).toEqual({ orders: [], lines: [], payments: [] });
+  });
+
+  it("reopens a billed earliest order that gains a dish, and only then", () => {
+    const billed = order("early", { openedAt: 10, state: { status: "billed", billedAt: 30 } });
+    const lines = [sent(draftLine("a", paneer, 1, "early"), "r1", 10), sent(draftLine("b", roti, 1, "late"), "r2", 20)];
+    const active = activeOrders([billed, order("late", { openedAt: 50 })], lines);
+    expect(joinTableOrders(active, []).orders).toEqual([{ ...billed, state: { status: "open" } }]);
+  });
+
+  it("leaves different tables and takeaways alone", () => {
+    const lines = [draftLine("a", roti, 1, "x"), draftLine("b", roti, 1, "y"), draftLine("c", roti, 1, "t1"), draftLine("d", roti, 1, "t2")];
+    const orders = [
+      order("x"),
+      order("y", t5),
+      order("t1", { channel: { type: "takeaway", token: 3 } }),
+      order("t2", { channel: { type: "takeaway", token: 3 } }),
+    ];
+    expect(joinTableOrders(activeOrders(orders, lines), [])).toEqual({ orders: [], lines: [], payments: [] });
+  });
+});
+
+describe("sharedTokens", () => {
+  const takeaway = (id: string, token: number, day = DAY) => order(id, { channel: { type: "takeaway", token }, businessDate: day });
+
+  it("names the tokens two of a day's takeaways share", () => {
+    const orders = [takeaway("a", 7), takeaway("b", 7), takeaway("c", 8), takeaway("d", 8, "2026-10-28" as BusinessDate), order("e")];
+    expect([...sharedTokens(orders, DAY)]).toEqual([7]);
+  });
+});
+
