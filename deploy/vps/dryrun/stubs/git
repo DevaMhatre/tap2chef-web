@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+echo "git $*" >> ${DRY:?}/calls
+[ -f ${DRY:?}/state/api-sha ] && printf '%s\trefs/heads/api\n' "$(cat ${DRY:?}/state/api-sha)"
+exit 0

@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+echo "pm2 $*" >> ${DRY:?}/calls
+case "$1" in
+  describe) [ -f ${DRY:?}/state/pm2-running ]; exit $? ;;
+  start) touch ${DRY:?}/state/pm2-running ;;
+  delete) rm -f ${DRY:?}/state/pm2-running ;;
+esac
+exit 0

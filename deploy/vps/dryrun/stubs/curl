@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+echo "curl $*" >> ${DRY:?}/calls
+case "$*" in
+  *archive*) tar -czf - -C ${DRY:?}/state api-src-parent ;;
+  *health*) [ -f ${DRY:?}/state/healthy ] ;;
+  *) exit 7 ;;
+esac

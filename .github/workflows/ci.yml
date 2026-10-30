@@ -84,3 +84,33 @@ jobs:
           git add -A
           git commit -q -m "site: built app from main ${GITHUB_SHA::7}"
           git push -q --force "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" site
+
+  # The API goes out the same way: what passed is published as the `api`
+  # branch (server code and lockfile, no tests), and the VPS installs it.
+  deploy-api:
+    name: Publish API
+    needs: [server, client]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: deploy-api
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Push to the api branch
+        run: |
+          mkdir api
+          cp -r server/. api/
+          rm -rf api/tests api/node_modules api/jest.config.js api/.env
+          cp .nvmrc api/
+          test -f api/index.js
+          cd api
+          git init -q -b api
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "api: server from main ${GITHUB_SHA::7}"
+          git push -q --force "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" api

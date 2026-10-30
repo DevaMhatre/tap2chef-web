@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+echo "npm $* (in $PWD)" >> ${DRY:?}/calls
+mkdir -p node_modules

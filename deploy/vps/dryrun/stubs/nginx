@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+echo "nginx $*" >> ${DRY:?}/calls
+[ -f ${DRY:?}/state/nginx-fail ] && { echo "nginx: [emerg] (stub) refused"; exit 1; }
+# Parse the edited site as nginx would read it, inside an http block.
+printf 'events {}\nhttp {\ninclude %s;\n}\n' "$ROOT_SITE" > ${DRY:?}/nginx-test.conf
+${DRY:?}/venv/bin/crossplane parse --strict --ignore=ssl_certificate,ssl_certificate_key,ssl_dhparam,include ${DRY:?}/nginx-test.conf > ${DRY:?}/parsed.json
+python3 -c "import json,sys; d=json.load(open('${DRY:?}/parsed.json')); errs=d['errors']+[e for c in d['config'] for e in c['errors']]; print('nginx: parse', 'ok' if not errs else errs); sys.exit(1 if errs else 0)"

@@ -8,6 +8,10 @@ import syncRoutes from "./routes/sync.js";
 
 const app = express();
 
+// In production every request arrives through nginx on the same machine, so
+// the address that matters (for rate limits) is the one nginx passes on.
+if (process.env.NODE_ENV === "production") app.set("trust proxy", 1);
+
 const allowedOrigins = (process.env.CLIENT_URL || "http://localhost:5173")
   .split(",")
   .map((origin) => origin.trim());
