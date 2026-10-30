@@ -257,7 +257,6 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 - The site updater runs (the live build matches the `site` branch) but not from root's crontab; where it is scheduled is undocumented. Worth one look before the next server change.
 - The push lock lives in one Node process; a second server instance would need a lock in the database.
 - Fine-grained permissions (removing a payment, a discount) are checked only on the device; the server checks per table.
-- The POS project's password login (`User`, `/api/auth/login`) is still in the server until 8c replaces it with email OTP.
 - The shell defaults to Node 20; the project needs Node 22 (`nvm use`), or the jsdom tests fail to start.
 
 ---
