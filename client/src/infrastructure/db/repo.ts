@@ -1,18 +1,24 @@
 import { db, isShopTable, type StoredRecord, type SyncedTable } from "./db";
 import { newId } from "../id";
 
-/** The account this device belongs to and the shop it works in. */
-export type Scope = { accountId: string; shopId: string };
+/** The account this device belongs to, the shop it works in, and the brand whose menu that shop sells. */
+export type Scope = { accountId: string; brandId: string; shopId: string };
 
 // Made on the device the first time anything is stored, before any sign-in;
-// the server adopts these ids at sign-up, so no record is ever re-tagged.
-// Domain and use cases never see them: storage stamps every write.
+// the server adopts these ids at sign-up, so no record is ever re-tagged. An
+// account's first brand takes the account's id. Domain and use cases never
+// see them: storage stamps every write.
 export async function getScope(): Promise<Scope> {
   return db.transaction("rw", db.meta, async () => {
-    const [account, shop] = await db.meta.bulkGet(["accountId", "shopId"]);
-    const scope = { accountId: account?.value ?? newId(), shopId: shop?.value ?? newId() };
-    if (!account || !shop) {
-      await db.meta.bulkPut([{ key: "accountId", value: scope.accountId }, { key: "shopId", value: scope.shopId }]);
+    const [account, brand, shop] = await db.meta.bulkGet(["accountId", "brandId", "shopId"]);
+    const accountId = account?.value ?? newId();
+    const scope = { accountId, brandId: brand?.value ?? accountId, shopId: shop?.value ?? newId() };
+    if (!account || !brand || !shop) {
+      await db.meta.bulkPut([
+        { key: "accountId", value: scope.accountId },
+        { key: "brandId", value: scope.brandId },
+        { key: "shopId", value: scope.shopId },
+      ]);
     }
     return scope;
   });
@@ -23,14 +29,14 @@ type NewOrExisting = Partial<StoredRecord> & Record<string, unknown>;
 // Create or update a record and queue it for sync, in one transaction so a
 // saved record is never missing from the outbox.
 export async function save(table: SyncedTable, data: NewOrExisting, scope?: Scope): Promise<StoredRecord> {
-  const { accountId, shopId } = scope ?? (await getScope());
+  const { accountId, brandId, shopId } = scope ?? (await getScope());
   const now = Date.now();
 
   const record: StoredRecord = {
     ...data,
     id: data.id ?? newId(),
     accountId,
-    ...(isShopTable(table) ? { shopId } : {}),
+    ...(isShopTable(table) ? { shopId } : { brandId }),
     createdAt: data.createdAt ?? now,
     updatedAt: now,
     deleted: data.deleted ?? false,

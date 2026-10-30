@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { PERMISSIONS, PRESET_ROLES } from "../domain/access.js";
-import { ACCOUNT_TABLES, SHOP_TABLES, WRITE_PERMISSION } from "../domain/tables.js";
+import { BRAND_TABLES, SHOP_TABLES, WRITE_PERMISSION } from "../domain/tables.js";
 
 // The server can't import the client's TypeScript, so it keeps copies of the
 // permissions and the synced tables. These tests read the client's source
@@ -33,8 +33,8 @@ describe("server and client agree", () => {
   });
 
   it("on the synced tables, and every table has a write permission", () => {
-    expect(ACCOUNT_TABLES).toEqual(listIn(db, "ACCOUNT_TABLES"));
+    expect(BRAND_TABLES).toEqual(listIn(db, "BRAND_TABLES"));
     expect(SHOP_TABLES).toEqual(listIn(db, "SHOP_TABLES"));
-    for (const table of [...ACCOUNT_TABLES, ...SHOP_TABLES]) expect(PERMISSIONS).toContain(WRITE_PERMISSION[table]);
+    for (const table of [...BRAND_TABLES, ...SHOP_TABLES]) expect(PERMISSIONS).toContain(WRITE_PERMISSION[table]);
   });
 });

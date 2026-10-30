@@ -30,7 +30,7 @@ export interface AppVisibility {
   isVisible(): boolean;
 }
 
-/** The current shop's menu: account catalog plus this shop's overrides. Deleted records excluded. */
+/** The current shop's menu: its brand's catalog plus this shop's overrides. Deleted records excluded. */
 export type MenuSnapshot = {
   profiles: MenuProfile[];
   categories: Category[];

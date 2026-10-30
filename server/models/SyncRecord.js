@@ -7,7 +7,9 @@ const syncRecordSchema = new mongoose.Schema(
   {
     table: { type: String, required: true },
     id: { type: String, required: true },
-    /** Only on shop-level records; the menu belongs to the whole account. */
+    /** Only on the brand's records (the menu), which every shop of the brand sells from. */
+    brandId: String,
+    /** Only on shop-level records. */
     shopId: String,
     deleted: { type: Boolean, default: false },
     data: { type: mongoose.Schema.Types.Mixed, default: {} },

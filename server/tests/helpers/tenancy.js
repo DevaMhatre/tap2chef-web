@@ -1,20 +1,28 @@
 import jwt from "jsonwebtoken";
 import Account from "../../models/Account.js";
+import Brand from "../../models/Brand.js";
 import Member from "../../models/Member.js";
 import Shop from "../../models/Shop.js";
 
-/** An account with one shop and its owner, as sign-up will make them. */
+/** An account with one brand, one shop and its owner, as sign-up makes them. */
 export async function createAccount(name = "Sharma Dhaba") {
   const accountId = `acc-${name}`;
+  const brandId = accountId;
   const shopId = `shop-${name}`;
   await Account.create({ _id: accountId, name });
-  await Shop.create({ _id: shopId, accountId, name });
+  await Brand.create({ _id: brandId, accountId, name });
+  await Shop.create({ _id: shopId, accountId, brandId, name });
   const owner = await addMember(accountId, { name: "Owner", roleId: "owner" });
-  return { accountId, shopId, owner };
+  return { accountId, brandId, shopId, owner };
 }
 
-export async function addShop(accountId, name) {
-  return Shop.create({ _id: `shop-${name}`, accountId, name });
+/** Another shop; of the account's first brand unless another is named. */
+export async function addShop(accountId, name, brandId = accountId) {
+  return Shop.create({ _id: `shop-${name}`, accountId, brandId, name });
+}
+
+export async function addBrand(accountId, name) {
+  return Brand.create({ _id: `brand-${name}`, accountId, name });
 }
 
 let n = 0;

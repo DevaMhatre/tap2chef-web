@@ -66,7 +66,7 @@ async function readMenu(): Promise<MenuSnapshot> {
     categories: readAll(categories, toCategory, "category"),
     items: readAll(items, toItem, "item"),
     // Shop overrides get their table with the first screen that writes one
-    // (a second shop). Until then every shop sells the account menu as is.
+    // (a second shop). Until then every shop sells its brand's menu as is.
     overrides: [],
   };
 }

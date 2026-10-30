@@ -3,6 +3,7 @@ import request from "supertest";
 import app from "../app.js";
 import { mailer } from "../lib/mailer.js";
 import Account from "../models/Account.js";
+import Brand from "../models/Brand.js";
 import LoginCode from "../models/LoginCode.js";
 import Member from "../models/Member.js";
 import Shop from "../models/Shop.js";
@@ -17,7 +18,8 @@ afterEach(async () => {
 });
 afterAll(closeDatabase);
 
-const device = { accountId: "dev-acc", shopId: "dev-shop" };
+// As the device names them: its first brand has the account's id.
+const device = { accountId: "dev-acc", brandId: "dev-acc", shopId: "dev-shop" };
 let sent;
 beforeEach(() => {
   sent = [];
@@ -76,7 +78,8 @@ describe("a new owner", () => {
     expect(res.body.data).toMatchObject({ ...device, restaurantName: "Sharma Dhaba", email: "new@example.com" });
 
     expect(await Account.findById("dev-acc").lean()).toMatchObject({ name: "Sharma Dhaba" });
-    expect(await Shop.findOne({ accountId: "dev-acc", _id: "dev-shop" }).lean()).toBeTruthy();
+    expect(await Brand.findOne({ accountId: "dev-acc", _id: "dev-acc" }).lean()).toMatchObject({ name: "Sharma Dhaba" });
+    expect(await Shop.findOne({ accountId: "dev-acc", _id: "dev-shop" }).lean()).toMatchObject({ brandId: "dev-acc" });
     const [owner] = await Member.find({ accountId: "dev-acc" }).lean();
     expect(owner).toMatchObject({ roleId: "owner", scope: { kind: "allShops" } });
     expect((await User.findOne({ email: "new@example.com" }).lean()).memberships).toEqual([
@@ -91,6 +94,7 @@ describe("a new owner", () => {
     const res = await verify({ email: "new@example.com", code: lastCode(), restaurantName: "Mine" }).expect(200);
     expect(res.body.data.accountId).not.toBe("dev-acc");
     expect(res.body.data.shopId).not.toBe("dev-shop");
+    expect(res.body.data.brandId).toBe(res.body.data.accountId);
     expect((await Account.findById("dev-acc").lean()).name).toBe("Someone else");
     await pullWith(res.body.data).expect(200);
   });
@@ -119,7 +123,12 @@ describe("an owner signing in again", () => {
       .post("/api/auth/verify")
       .send({ email: "owner@example.com", code: lastCode(), device: { accountId: "other", shopId: "other" } })
       .expect(200);
-    expect(res.body.data).toMatchObject({ accountId: first.accountId, shopId: first.shopId, restaurantName: "Sharma Dhaba" });
+    expect(res.body.data).toMatchObject({
+      accountId: first.accountId,
+      brandId: first.accountId,
+      shopId: first.shopId,
+      restaurantName: "Sharma Dhaba",
+    });
     expect(await Account.countDocuments()).toBe(1);
   });
 

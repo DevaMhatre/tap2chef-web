@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ACCOUNT_TABLES, SHOP_TABLES } from "../domain/tables.js";
+import { BRAND_TABLES, SHOP_TABLES } from "../domain/tables.js";
 
 const email = z.string().trim().toLowerCase().pipe(z.email("Enter a valid email"));
 
@@ -13,7 +13,7 @@ export const verifySchema = z.object({
   restaurantName: z.string().trim().min(1).max(60).optional(),
 });
 
-const SYNCED = [...ACCOUNT_TABLES, ...SHOP_TABLES];
+const SYNCED = [...BRAND_TABLES, ...SHOP_TABLES];
 const MAX_CHANGES = 500;
 
 // A key Mongo would read as an operator or a path: refused anywhere in a record.
@@ -31,7 +31,7 @@ export const pushSchema = z.object({
       z.object({
         table: z.enum(SYNCED, "Unknown table"),
         record: z
-          .looseObject({ id: syncId, shopId: syncId.optional(), deleted: z.boolean().optional() })
+          .looseObject({ id: syncId, brandId: syncId.optional(), shopId: syncId.optional(), deleted: z.boolean().optional() })
           .refine((record) => !unsafeKey(record), "A record field name may not start with $ or contain a dot"),
       }),
     )

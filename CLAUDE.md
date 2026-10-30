@@ -66,9 +66,10 @@ Account     (the owner; plan, billing later)   ← signs in with email; has ever
   Permission rules are pure domain functions.
 - **Two kinds of identity.** The owner signs a device in once (email/OTP); staff
   switch on a shared device with a personal 4-digit PIN.
-- **Scoping:** account-level records (shops, members, menu catalog, subscription)
-  carry `accountId`; shop-level records (overrides, tables, orders, expenses)
-  carry `accountId` + `shopId`. On the server, one enforced gate refuses any
+- **Scoping:** account-level records (brands, shops, members, subscription)
+  carry `accountId`; brand-level records (the menu catalog) carry `accountId` +
+  `brandId`; shop-level records (overrides, tables, orders, expenses) carry
+  `accountId` + `shopId`. An account's first brand has the account's id. On the server, one enforced gate refuses any
   query without `accountId`, with tests that prove one tenant can't read
   another's data.
 - **Device:** signed into one account, working in one shop at a time. Its local

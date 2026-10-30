@@ -3,8 +3,8 @@
 // come: the rules for an order or a payment live on the device; the server
 // guards whose a record is and who may write it.
 
-// The account's catalog: every shop sells from it.
-export const ACCOUNT_TABLES = ["menuProfiles", "categories", "items"];
+// The brand's catalog: every shop of the brand sells from it.
+export const BRAND_TABLES = ["menuProfiles", "categories", "items"];
 
 // One restaurant's service and money.
 export const SHOP_TABLES = [

@@ -6,7 +6,9 @@ import { newId } from "../id";
 export interface StoredRecord {
   id: string;
   accountId: string;
-  /** Only on shop-level records; the menu belongs to the whole account. */
+  /** Only on the brand's records (the menu), which every shop of the brand sells from. */
+  brandId?: string;
+  /** Only on shop-level records. */
   shopId?: string;
   createdAt: number;
   updatedAt: number;
@@ -27,8 +29,8 @@ export interface OutboxRow {
   queuedAt: number;
 }
 
-// The account's catalog: every shop sells from it.
-export const ACCOUNT_TABLES = ["menuProfiles", "categories", "items"] as const;
+// The brand's catalog: every shop of the brand sells from it.
+export const BRAND_TABLES = ["menuProfiles", "categories", "items"] as const;
 
 // One restaurant's service and money.
 export const SHOP_TABLES = [
@@ -41,7 +43,7 @@ export const SHOP_TABLES = [
   "drawerEntries",
 ] as const;
 
-export const SYNCED_TABLES = [...ACCOUNT_TABLES, ...SHOP_TABLES] as const;
+export const SYNCED_TABLES = [...BRAND_TABLES, ...SHOP_TABLES] as const;
 
 export type SyncedTable = (typeof SYNCED_TABLES)[number];
 
@@ -132,6 +134,24 @@ db.version(7)
         delete row.tenantId;
         row.accountId = accountId;
         if (shop) row.shopId = shopId;
+      });
+    }
+  });
+
+// Step 10a: the menu belongs to a brand, and a restaurant's shops inherit it.
+// An account's first brand takes the account's id, so every device of an
+// account, upgrading on its own and offline, names the same brand, and the
+// server's records name it too. Nothing visible changes.
+db.version(8)
+  .stores({})
+  .upgrade(async (tx) => {
+    const meta = tx.table<MetaRow, string>("meta");
+    const account = await meta.get("accountId");
+    if (!account) return;
+    await meta.put({ key: "brandId", value: account.value });
+    for (const table of BRAND_TABLES) {
+      await tx.table<StoredRecord, string>(table).toCollection().modify((row) => {
+        row.brandId = account.value;
       });
     }
   });

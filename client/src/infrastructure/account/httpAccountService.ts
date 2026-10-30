@@ -49,12 +49,14 @@ export const httpAccountService: AccountService = {
     }
     if (reply.body.needsName) return ok({ kind: "needsName" });
 
-    const { token, accountId, shopId, restaurantName: name } = reply.body;
+    const { token, accountId, brandId, shopId, restaurantName: name } = reply.body;
     if (typeof token !== "string" || typeof accountId !== "string" || typeof shopId !== "string" || typeof name !== "string") {
       return err("failed");
     }
+    // A server from before brands names none: the account's first brand has its id.
+    const scope = { accountId, brandId: typeof brandId === "string" ? brandId : accountId, shopId };
     const session = { email, restaurantName: name };
-    await adoptSession({ session, token, scope: { accountId, shopId } });
+    await adoptSession({ session, token, scope });
     return ok({ kind: "signedIn", session });
   },
 };

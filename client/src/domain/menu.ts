@@ -145,13 +145,13 @@ export function withPriceEverywhere(draft: ItemDraft, text: string): ItemDraft {
 
 // ---------------------------------------------------------------- shop overrides
 
-// The menu belongs to the account; a shop stores only how it differs. No
-// override means the shop sells the item exactly as the account menu says.
+// The menu belongs to a brand; each of its shops stores only how it differs.
+// No override means the shop sells the item exactly as the brand's menu says.
 export type ProfileOverride = { kind: "price"; pricing: Pricing } | { kind: "notSold" };
 
 export type ItemOverride = {
   itemId: ItemId;
-  /** Profiles not named here inherit the account price. */
+  /** Profiles not named here inherit the brand's price. */
   profiles: Partial<Record<ProfileId, ProfileOverride>>;
 };
 

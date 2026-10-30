@@ -29,19 +29,21 @@ export async function deviceToken(): Promise<string | undefined> {
 export async function adoptSession({ session, token, scope }: SignedInDevice): Promise<void> {
   const tables = SYNCED_TABLES.map((name) => db[name]);
   await db.transaction("rw", [db.meta, ...tables], async () => {
-    const [account, shop] = await db.meta.bulkGet(["accountId", "shopId"]);
-    if (account?.value !== scope.accountId || shop?.value !== scope.shopId) {
+    const [account, brand, shop] = await db.meta.bulkGet(["accountId", "brandId", "shopId"]);
+    if (account?.value !== scope.accountId || brand?.value !== scope.brandId || shop?.value !== scope.shopId) {
       for (const name of SYNCED_TABLES) {
         const shopLevel = isShopTable(name);
         // Still queued in the outbox: nothing reaches the server before sign-in.
         await db[name].toCollection().modify((row) => {
           row.accountId = scope.accountId;
           if (shopLevel) row.shopId = scope.shopId;
+          else row.brandId = scope.brandId;
         });
       }
     }
     await db.meta.bulkPut([
       { key: "accountId", value: scope.accountId },
+      { key: "brandId", value: scope.brandId },
       { key: "shopId", value: scope.shopId },
       { key: TOKEN, value: token },
       { key: SESSION, value: JSON.stringify(session) },

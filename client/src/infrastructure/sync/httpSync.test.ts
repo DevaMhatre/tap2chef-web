@@ -66,8 +66,8 @@ describe("httpSync", () => {
     expect(server.fetch).not.toHaveBeenCalled();
   });
 
-  it("sends each waiting record once, as it is now, under the device's shop and without the account", async () => {
-    const { shopId } = await signIn();
+  it("sends each waiting record once, as it is now, under the device's shop or brand and without the account", async () => {
+    const { brandId, shopId } = await signIn();
     await writeAll([{ table: "items", record: { id: "i1", name: "Samosa" }, op: "put" }]);
     await writeAll([{ table: "items", record: { id: "i1", name: "Samosa (2)" }, op: "put" }]);
     await writeAll([{ table: "orders", record: { id: "o1" }, op: "put" }]);
@@ -75,10 +75,11 @@ describe("httpSync", () => {
     expect(await httpSync.run()).toEqual({ ok: true, value: undefined });
     expect(server.pushes).toHaveLength(1);
     const [item, order] = server.pushes[0]!;
-    expect(item).toMatchObject({ table: "items", record: { id: "i1", name: "Samosa (2)", deleted: false } });
+    expect(item).toMatchObject({ table: "items", record: { id: "i1", name: "Samosa (2)", brandId, deleted: false } });
     expect(item!.record).not.toHaveProperty("accountId");
     expect(item!.record).not.toHaveProperty("shopId");
     expect(order).toMatchObject({ table: "orders", record: { id: "o1", shopId } });
+    expect(order!.record).not.toHaveProperty("brandId");
     expect(await db.outbox.count()).toBe(0);
     expect(server.fetch.mock.calls.map(([url]) => url as string).map((u) => u.split("?")[0])).toEqual(["/api/sync/push", "/api/sync/pull"]);
   });
@@ -91,6 +92,16 @@ describe("httpSync", () => {
     });
     await httpSync.run();
     expect(server.pushes[0]![0]!.record).toEqual({ id: "old", createdAt: 1, updatedAt: 1, deleted: false, shopId });
+  });
+
+  it("files a menu record from an older build under the device's brand", async () => {
+    const { brandId } = await signIn();
+    await db.transaction("rw", db.items, db.outbox, async () => {
+      await db.items.put({ id: "old", accountId: "x", createdAt: 1, updatedAt: 1, deleted: false });
+      await db.outbox.add({ table: "items", recordId: "old", queuedAt: 1 });
+    });
+    await httpSync.run();
+    expect(server.pushes[0]![0]!.record).toEqual({ id: "old", createdAt: 1, updatedAt: 1, deleted: false, brandId });
   });
 
   it("keeps a change made while a push is on its way, for the next one", async () => {
@@ -106,17 +117,19 @@ describe("httpSync", () => {
   });
 
   it("brings other devices' changes, page by page, and remembers where it got to", async () => {
-    const { accountId, shopId } = await signIn();
+    const { accountId, brandId, shopId } = await signIn();
     server.state.pageSize = 2;
-    server.elsewhere({ table: "items", record: { id: "i1", name: "Poha", deleted: false } });
+    server.elsewhere({ table: "items", record: { id: "i1", name: "Poha", brandId, deleted: false } });
     server.elsewhere({ table: "orders", record: { id: "o1", shopId, deleted: false } });
     server.elsewhere({ table: "items", record: { id: "i2", name: "Chai", deleted: true } });
 
     await httpSync.run();
-    expect(await db.items.get("i1")).toMatchObject({ name: "Poha", accountId, deleted: false });
+    expect(await db.items.get("i1")).toMatchObject({ name: "Poha", accountId, brandId, deleted: false });
     expect(await db.items.get("i1")).not.toHaveProperty("shopId");
     expect(await db.orders.get("o1")).toMatchObject({ accountId, shopId });
-    expect(await db.items.get("i2")).toMatchObject({ deleted: true });
+    expect(await db.orders.get("o1")).not.toHaveProperty("brandId");
+    // A server from before brands sent none: the menu is the account's first brand.
+    expect(await db.items.get("i2")).toMatchObject({ brandId, deleted: true });
     expect(await db.meta.get("syncCursor")).toEqual({ key: "syncCursor", value: "3" });
     expect(await db.outbox.count()).toBe(0);
 

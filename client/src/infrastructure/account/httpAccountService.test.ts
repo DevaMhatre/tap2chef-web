@@ -44,7 +44,7 @@ describe("httpAccountService", () => {
     expect(JSON.parse((fetch.mock.calls[0] as unknown as [string, RequestInit])[1].body as string)).toEqual({
       email, code: "123456", device: scope, restaurantName: "Sharma Dhaba",
     });
-    expect(await db.orders.get("o1")).toMatchObject(scope);
+    expect(await db.orders.get("o1")).toMatchObject({ accountId: scope.accountId, shopId: scope.shopId });
     expect(await db.meta.get("deviceToken")).toEqual({ key: "deviceToken", value: "t" });
     expect((await watching).at(-1)).toEqual({ email, restaurantName: "Sharma Dhaba" });
   });
@@ -54,14 +54,24 @@ describe("httpAccountService", () => {
       { table: "items", record: { id: "i1" }, op: "put" },
       { table: "payments", record: { id: "p1" }, op: "put" },
     ]);
-    vi.stubGlobal("fetch", reply(200, { data: { token: "t", accountId: "acc", shopId: "shop", restaurantName: "R", email } }));
+    const data = { token: "t", accountId: "acc", brandId: "brand", shopId: "shop", restaurantName: "R", email };
+    vi.stubGlobal("fetch", reply(200, { data }));
 
     await httpAccountService.signIn(email, "123456", undefined);
-    expect(await getScope()).toEqual({ accountId: "acc", shopId: "shop" });
-    expect(await db.items.get("i1")).toMatchObject({ accountId: "acc" });
+    expect(await getScope()).toEqual({ accountId: "acc", brandId: "brand", shopId: "shop" });
+    expect(await db.items.get("i1")).toMatchObject({ accountId: "acc", brandId: "brand" });
     expect(await db.items.get("i1")).not.toHaveProperty("shopId");
     expect(await db.payments.get("p1")).toMatchObject({ accountId: "acc", shopId: "shop" });
     expect(await db.outbox.count()).toBe(2);
+  });
+
+  it("takes the account's id as its brand from a server built before brands", async () => {
+    await writeAll([{ table: "items", record: { id: "i1" }, op: "put" }]);
+    vi.stubGlobal("fetch", reply(200, { data: { token: "t", accountId: "acc", shopId: "shop", restaurantName: "R", email } }));
+
+    await httpAccountService.signIn(email, "123456", undefined);
+    expect(await getScope()).toEqual({ accountId: "acc", brandId: "acc", shopId: "shop" });
+    expect(await db.items.get("i1")).toMatchObject({ brandId: "acc" });
   });
 
   it("asks for the name when the server does", async () => {

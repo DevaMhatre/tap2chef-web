@@ -6,6 +6,7 @@ import { err, ok, type Result } from "./result";
 // never a role's name, so a custom role later needs no code change.
 
 export type AccountId = Id<"AccountId">;
+export type BrandId = Id<"BrandId">;
 export type ShopId = Id<"ShopId">;
 export type MemberId = Id<"MemberId">;
 export type RoleId = Id<"RoleId">;
@@ -13,8 +14,15 @@ export type RoleId = Id<"RoleId">;
 /** The subscriber. Billing and plan arrive with subscriptions. */
 export type Account = { id: AccountId; name: string };
 
-/** One restaurant outlet. A single-shop owner never sees this word. */
-export type Shop = { id: ShopId; name: string };
+/**
+ * One menu and the shops that sell it ("Sharma Biryani"); a café is another
+ * brand. The owner never sees this word, only "restaurants". An account's
+ * first brand has the account's id.
+ */
+export type Brand = { id: BrandId; name: string };
+
+/** One restaurant outlet. It sells its brand's menu. A single-shop owner never sees this word. */
+export type Shop = { id: ShopId; brandId: BrandId; name: string };
 
 /**
  * Every gate in the product, and nothing that isn't one. Adding a gate adds a

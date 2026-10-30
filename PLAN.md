@@ -131,7 +131,7 @@ Decided 2026-10-30 with the founder, and cross-checked against the Steve Jobs Pr
 | People, phones, details, add a restaurant | ✓ | – | – |
 
 Small steps:
-- [ ] 10a Brand level in the data: the menu belongs to a brand; shops inherit it; today's account menu becomes the first brand's, with nothing visible changing
+- [ ] 10a Brand level in the data: the menu belongs to a brand; shops inherit it; today's account menu becomes the first brand's, with nothing visible changing. **Built, commit pending.** Device: Dexie v8 puts every menu row in the account's first brand (its id is the account's), the scope gains `brandId`, menu records travel with it. Server: `Brand` model, shops carry `brandId`, a pull brings the shop's brand's menu, a menu record never moves brand and only goes into one of the account's brands; at every start, before listening, `fileMenusUnderBrands()` gives older accounts their first brand and files their shops and menu records under it. Both old builds are tolerated: a device from before brands sends menus without one (filed under the first brand), a server from before brands names none (the device takes the account's id). Every new guard's test fails without it. Upgrade checked in Chrome against the live build's data and with a live-build tab left open (`e2e/upgrade.mjs`); sync, sign-in, day, menu and bill scripts re-run at 360 / 820 / 1440, light and dark
 - [ ] 10b Reads scoped per shop and one sync cursor per shop, so a phone that holds two restaurants never mixes them or skips one's records
 - [ ] 10c The setup above for a new owner, offline never blocking (the account attaches when there's internet); a phone that already has records gets a one-time "Keep a copy of Sharma Dhaba safe" card instead
 - [ ] 10d The app shapes itself to how customers order: no dine-in → no Tables tab, the takeaway screen is home
@@ -185,6 +185,8 @@ Newest change first within each group. Format: decision — reason (date).
 - The database is MongoDB Atlas (the owner's existing cluster, its own `tap2chef` database): the restaurant's copy survives even if the VPS dies, and Ubuntu 25.04 isn't a MongoDB-supported platform (2026-10-30).
 - Sync: last write wins in the **server's arrival order**, never device clocks; pull by sync number — cheap phones often have wrong clocks (2026-10-29).
 - A device holds only what its signed-in member may see; the server decides (2026-10-29).
+- An account's first brand takes the account's id, on the device and on the server. Every device of an account upgrading on its own, offline, then names the same brand without asking anyone, and nothing is re-tagged; later brands get fresh ids. A random id per device would split one restaurant's menu into as many brands as it has phones (2026-10-30).
+- The server's data moves forward in code that runs at every start, before the API listens, and changes nothing once done (`server/migrations/`): it reaches the live database through the normal deploy, with the updater's health check and rollback, never by hand on the VPS (2026-10-30).
 
 ### Menu
 - One menu with a price per **price list** (Dine-In, Takeaway, Bulk… owner-named); a missing price = not sold in that list — takeaway prices differ and some dishes are dine-in only (2026-10-29).
@@ -296,6 +298,8 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 - Two offline devices can give two takeaways the same token number.
 - Send has no kitchen output yet: no KOT print or kitchen screen until step 9 / sync.
 - Reads don't filter by shop yet: fine while a device holds one shop; needed (or one local database per shop) before an owner's device syncs two shops.
+- A menu row written by a tab still on a build from before brands has no `brandId` on the device (sync stamps it on the way out, and the server files it). 10b's per-brand menu reads must count such a row as the account's first brand, or they will hide it.
+- The server tolerates menu records sent without a brand (old builds) by filing them under the account's first brand. Once every device has updated, that fallback can go; with a second brand (10i) it would put an old build's dish in the wrong menu.
 - The server can't import the client's TypeScript: permissions and synced tables exist twice, kept equal by `server/tests/contract.test.js` until a shared package exists.
 - Signing in to an account with several shops picks the first one the owner works in; a shop picker comes with a second shop.
 - The site updater runs (the live build matches the `site` branch) but not from root's crontab; where it is scheduled is undocumented. Worth one look before the next server change.
@@ -323,3 +327,4 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 - **2026-10-30** — Read the VPS (owner ran read-only commands): no MongoDB, pm2 runs the POS on *:8000, no root crontab. Server now binds to `HOST` (127.0.0.1 on the VPS), trusts nginx in production, stops without its database; CI publishes the `api` branch; `deploy/vps/setup-api.sh` + updater written and dry-run against a copy of the live nginx config (9 scenarios incl. nginx refusing and a failing release). Atlas chosen for the database.
 - **2026-10-30** — Step 8a–8d live: API set up on the VPS, sign-in by email code and two-device sync confirmed by the founder on real phones ("like a knife in the butter"). Next: 8e (add a device by code, staff PINs, "by Ravi").
 - **2026-10-30** — Designed the owner's experience with the founder (step 10): account → brand → shop with the owner seeing only "restaurants"; a 4–5 screen setup where each answer changes the app; owner / manager / staff; the header name as the owner's door. Cross-checked against the Steve Jobs test (cut: brand/outlet words, the owner's Today home, a sixth tab, payment and location questions, role names). Written into PLAN and CLAUDE.md; nothing built yet.
+- **2026-10-30** — 10a built: the menu belongs to a brand on the device (Dexie v8) and on the server (`Brand`, shops in a brand, sync by brand, start-up migration for older accounts); the first brand takes the account's id so devices agree offline. Guard-removal check on every new rule; upgrade checked in Chrome against the live build (`e2e/upgrade.mjs`, new); all browser scripts re-run. Commit pending.

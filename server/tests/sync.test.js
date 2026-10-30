@@ -6,7 +6,7 @@ import Member from "../models/Member.js";
 import SyncRecord from "../models/SyncRecord.js";
 import { PULL_LIMIT } from "../controllers/syncController.js";
 import { connect, closeDatabase, clearDatabase } from "./helpers/db.js";
-import { addMember, addShop, createAccount, deviceToken } from "./helpers/tenancy.js";
+import { addBrand, addMember, addShop, createAccount, deviceToken } from "./helpers/tenancy.js";
 
 beforeAll(connect);
 afterEach(clearDatabase);
@@ -22,8 +22,8 @@ const item = (id, over = {}) => ({ table: "items", record: { id, name: "Samosa",
 const order = (id, shopId, over = {}) => ({ table: "orders", record: { id, shopId, status: "open", ...over } });
 
 async function ownerDevice(name) {
-  const { accountId, shopId, owner } = await createAccount(name);
-  return { accountId, shopId, device: as(deviceToken(accountId, owner._id)) };
+  const { accountId, brandId, shopId, owner } = await createAccount(name);
+  return { accountId, brandId, shopId, device: as(deviceToken(accountId, owner._id)) };
 }
 
 describe("tenant isolation", () => {
@@ -104,14 +104,14 @@ describe("devices", () => {
 
 describe("push and pull", () => {
   it("hands back changes in arrival order, the last arrival winning", async () => {
-    const { shopId, device } = await ownerDevice("A");
+    const { brandId, shopId, device } = await ownerDevice("A");
     await device.push([item("i1", { name: "Samosa" }), order("o1", shopId)]).expect(200);
     const res = await device.push([item("i1", { name: "Samosa (2)" })]).expect(200);
     expect(res.body.data.seq).toBe(3);
 
     const { changes, seq, more } = (await device.pull(shopId)).body.data;
     expect(changes.map((c) => [c.record.id, c.seq])).toEqual([["o1", 2], ["i1", 3]]);
-    expect(changes[1].record).toEqual({ id: "i1", name: "Samosa (2)", deleted: false });
+    expect(changes[1].record).toEqual({ id: "i1", name: "Samosa (2)", brandId, deleted: false });
     expect(changes[0].record).toMatchObject({ id: "o1", shopId, status: "open" });
     expect([seq, more]).toEqual([3, false]);
     expect((await device.pull(shopId, 3)).body.data).toEqual({ changes: [], seq: 3, more: false });
@@ -134,6 +134,44 @@ describe("push and pull", () => {
     expect(pulled.changes.map((c) => c.record.id)).toEqual(["i1", "here"]);
     expect(pulled.seq).toBe(2);
     expect((await device.pull(second._id)).body.data.changes.map((c) => c.record.id)).toEqual(["i1", "there"]);
+  });
+
+  it("gives a shop its own brand's menu, never another brand's", async () => {
+    const { accountId, brandId, shopId, device } = await ownerDevice("A");
+    const cafe = await addBrand(accountId, "Cafe");
+    const cafeShop = await addShop(accountId, "Cafe", cafe._id);
+    await device.push([item("biryani", { brandId }), item("latte", { brandId: cafe._id })]).expect(200);
+
+    expect((await device.pull(shopId)).body.data.changes.map((c) => [c.record.id, c.record.brandId])).toEqual([["biryani", brandId]]);
+    expect((await device.pull(cafeShop._id)).body.data.changes.map((c) => c.record.id)).toEqual(["latte"]);
+  });
+
+  it("files a menu record from a device built before brands under the account's first brand", async () => {
+    const { accountId, brandId, device } = await ownerDevice("A");
+    await device.push([item("i1")]).expect(200);
+    const stored = await SyncRecord.findOne({ accountId, id: "i1" }).lean();
+    expect(stored).toMatchObject({ brandId: accountId });
+    expect(stored).not.toHaveProperty("shopId");
+    expect(brandId).toBe(accountId);
+  });
+
+  it("never lets a menu record move to another brand, or a brand's record belong to a shop", async () => {
+    const { accountId, brandId, shopId, device } = await ownerDevice("A");
+    const cafe = await addBrand(accountId, "Cafe");
+    await device.push([item("i1", { brandId, name: "Samosa" })]).expect(200);
+    await device.push([item("i1", { brandId: cafe._id, name: "Latte" })]).expect(409);
+    await device.push([order("o1", shopId, { brandId })]).expect(400);
+    const stored = await SyncRecord.findOne({ accountId, id: "i1" }).lean();
+    expect(stored).toMatchObject({ brandId, data: { name: "Samosa" } });
+  });
+
+  it("refuses a menu record for a brand that isn't the account's", async () => {
+    const a = await ownerDevice("A");
+    const b = await ownerDevice("B");
+    await b.device.push([item("i1", { brandId: a.brandId })]).expect(404);
+    await b.device.push([item("i1", { brandId: "made-up" })]).expect(404);
+    expect(await SyncRecord.countDocuments({ accountId: a.accountId })).toBe(0);
+    expect(await SyncRecord.countDocuments({ accountId: b.accountId })).toBe(0);
   });
 
   it("pages a long history", async () => {

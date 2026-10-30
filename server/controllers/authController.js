@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import jwt from "jsonwebtoken";
 import Account from "../models/Account.js";
+import Brand from "../models/Brand.js";
 import LoginCode from "../models/LoginCode.js";
 import Member from "../models/Member.js";
 import Shop from "../models/Shop.js";
@@ -59,11 +60,14 @@ async function newAccountIds(device) {
 async function signUp(email, device, restaurantName) {
   const { accountId, shopId } = await newAccountIds(device);
   const memberId = crypto.randomUUID();
+  // The first brand has the account's id, as the device already names it.
+  const brandId = accountId;
   await Account.create({ _id: accountId, name: restaurantName });
-  await Shop.create({ _id: shopId, accountId, name: restaurantName });
+  await Brand.create({ _id: brandId, accountId, name: restaurantName });
+  await Shop.create({ _id: shopId, accountId, brandId, name: restaurantName });
   await Member.create({ _id: memberId, accountId, name: "Owner", roleId: "owner", scope: { kind: "allShops" } });
   await User.updateOne({ email }, { $push: { memberships: { accountId, memberId } } }, { upsert: true });
-  return { accountId, shopId, memberId, restaurantName };
+  return { accountId, brandId, shopId, memberId, restaurantName };
 }
 
 /** An existing owner: their first account, and the first shop they work in. */
@@ -76,7 +80,7 @@ async function signIn({ accountId, memberId }) {
     Shop.findOne({ accountId, ...scope }).sort({ createdAt: 1 }).lean(),
   ]);
   if (!account || !shop) return undefined;
-  return { accountId, shopId: shop._id, memberId, restaurantName: account.name };
+  return { accountId, brandId: shop.brandId, shopId: shop._id, memberId, restaurantName: account.name };
 }
 
 export async function verifyCode(req, res) {
@@ -114,6 +118,7 @@ export async function verifyCode(req, res) {
     data: {
       token: deviceToken(session.accountId, session.memberId),
       accountId: session.accountId,
+      brandId: session.brandId,
       shopId: session.shopId,
       restaurantName: session.restaurantName,
       email,
