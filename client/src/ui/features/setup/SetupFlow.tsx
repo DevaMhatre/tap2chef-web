@@ -4,18 +4,16 @@ import type { IconType } from "react-icons";
 import {
   MdCheckCircle,
   MdChevronLeft,
-  MdRadioButtonUnchecked,
   MdStorefront,
-  MdTableRestaurant,
-  MdTakeoutDining,
   MdVerifiedUser,
 } from "react-icons/md";
-import { useSetup, type ServiceChoice, type Setup } from "../../../usecases/useSetup";
+import { useSetup, type Setup } from "../../../usecases/useSetup";
 import { Button } from "../../design-system/Button";
 import { TextField } from "../../design-system/Field";
 import { hapticSuccess } from "../../design-system/haptic";
 import { CodeStep, EmailStep } from "../account/AccountSheet";
 import { TableSetup } from "../tables/TableSetup";
+import { ServiceTiles } from "./ServiceTiles";
 import { StarterList } from "./StarterList";
 
 type Step<S extends Setup["step"]> = { setup: Extract<Setup, { step: S }> };
@@ -163,43 +161,11 @@ function NameScreen({ setup }: Step<"name">) {
   );
 }
 
-const WAYS: { kind: keyof ServiceChoice; icon: IconType; label: string; detail: string }[] = [
-  { kind: "dineIn", icon: MdTableRestaurant, label: "Dine-in", detail: "They sit at a table" },
-  { kind: "takeaway", icon: MdTakeoutDining, label: "Takeaway & delivery", detail: "They take it with them" },
-];
-
 function ServiceScreen({ setup }: Step<"service">) {
   return (
     <Screen back={() => void setup.back()} title="How do customers order?" subtitle="Choose one or both.">
       {/* Tiles only choose (a selection never commits); Next commits. */}
-      <div role="group" aria-label="How customers order" className="space-y-3">
-        {WAYS.map(({ kind, icon: Icon, label, detail }) => {
-          const on = setup.choice[kind];
-          return (
-            <button
-              key={kind}
-              type="button"
-              role="checkbox"
-              aria-checked={on}
-              onClick={() => setup.toggle(kind)}
-              className={`flex min-h-20 w-full items-center gap-4 rounded-2xl bg-surface px-4 text-left transition-transform active:scale-[0.98] ${
-                on ? "ring-2 ring-primary" : ""
-              }`}
-            >
-              <Icon aria-hidden className="shrink-0 text-3xl text-primary" />
-              <span className="min-w-0 flex-1">
-                <span className="block text-[17px] font-semibold">{label}</span>
-                <span className="block text-[15px] text-muted">{detail}</span>
-              </span>
-              {on ? (
-                <MdCheckCircle aria-hidden className="shrink-0 text-2xl text-primary" />
-              ) : (
-                <MdRadioButtonUnchecked aria-hidden className="shrink-0 text-2xl text-line" />
-              )}
-            </button>
-          );
-        })}
-      </div>
+      <ServiceTiles choice={setup.choice} onToggle={setup.toggle} />
       {setup.problem && (
         <p role="alert" className="mt-3 px-1 text-[13px] font-medium text-primary">
           Choose at least one.

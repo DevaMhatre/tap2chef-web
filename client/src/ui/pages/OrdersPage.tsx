@@ -10,6 +10,7 @@ import { shortOrderTitle } from "../features/order/labels";
 import { OrderIcon } from "../features/order/OrderIcon";
 import { formatPrice, formatSentAgo, formatWaited } from "../format";
 import { useShowsTables } from "../../usecases/useRestaurant";
+import { useTakeawayIsMain } from "../../usecases/useRestaurantDetails";
 import { useNow } from "../useNow";
 
 // The live service: every order with something on it, dine-in apart from
@@ -20,6 +21,8 @@ export default function OrdersPage() {
   const navigate = useNavigate();
   const now = useNow();
   const tables = useShowsTables() !== false;
+  // At a dine-in-only place a parcel still happens, but it isn't the screen's main action.
+  const takeawayIsMain = useTakeawayIsMain();
 
   if (orders.state === "loading") return <PageHeader title="Orders" />;
 
@@ -69,7 +72,7 @@ export default function OrdersPage() {
       <PageHeader
         title="Orders"
         actions={
-          <Button onClick={newTakeaway}>
+          <Button variant={takeawayIsMain ? "primary" : "tinted"} onClick={newTakeaway}>
             <MdAdd className="-ml-1 text-xl" /> Takeaway
           </Button>
         }
@@ -79,7 +82,7 @@ export default function OrdersPage() {
           <div className={`flex flex-col items-center justify-center text-center ${settled.length > 0 ? "py-12" : "min-h-[50dvh]"}`}>
             <MdReceiptLong className="mb-3 text-5xl text-muted/60" aria-hidden />
             <p className="text-[17px] font-semibold">No open orders</p>
-            <p className="mt-1 text-[15px] text-muted">{tables ? "Tap a table, or start a takeaway." : "Start a takeaway."}</p>
+            <p className="mt-1 text-[15px] text-muted">{!tables ? "Start a takeaway." : takeawayIsMain ? "Tap a table, or start a takeaway." : "Tap a table to start an order."}</p>
           </div>
         )}
         {orders.earlier.length > 0 && (

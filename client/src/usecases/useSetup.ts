@@ -7,7 +7,9 @@ import {
   stepAfterService,
   type DishRow,
   type DishRowError,
+  choiceOf,
   type Service,
+  type ServiceChoice,
   type SetupProgress,
   type ShopDetails,
 } from "../domain/setup";
@@ -20,7 +22,7 @@ import { usePorts } from "./PortsProvider";
 import { useSignIn, type SignIn } from "./useSignIn";
 import { useTables } from "./useTables";
 
-export type ServiceChoice = { dineIn: boolean; takeaway: boolean };
+export type { ServiceChoice };
 
 /** One question per screen. Every answer is saved as it is given. */
 export type Setup =
@@ -167,7 +169,7 @@ export function useSetup(): Setup {
       };
 
     case "service": {
-      const shown = choice ?? (details ? { dineIn: details.service !== "takeaway", takeaway: details.service !== "dineIn" } : NO_CHOICE);
+      const shown = choice ?? (details ? choiceOf(details.service) : NO_CHOICE);
       return {
         step: "service",
         choice: shown,

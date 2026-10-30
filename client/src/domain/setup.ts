@@ -9,7 +9,12 @@ import { err, ok, type Result } from "./result";
 /** How customers order here. No dine-in means no tables anywhere. */
 export type Service = "dineIn" | "takeaway" | "both";
 
-export function readService(choice: { dineIn: boolean; takeaway: boolean }): Result<Service, "none"> {
+/** The two tiles, as chosen. */
+export type ServiceChoice = { dineIn: boolean; takeaway: boolean };
+
+export const choiceOf = (service: Service): ServiceChoice => ({ dineIn: service !== "takeaway", takeaway: service !== "dineIn" });
+
+export function readService(choice: ServiceChoice): Result<Service, "none"> {
   if (choice.dineIn && choice.takeaway) return ok("both");
   if (choice.dineIn) return ok("dineIn");
   if (choice.takeaway) return ok("takeaway");
@@ -23,6 +28,12 @@ export const servesDineIn = (service: Service): boolean => service !== "takeaway
  * question existed has no answer, and keeps what it always had.
  */
 export const showsTables = (details: ShopDetails | null): boolean => (details ? servesDineIn(details.service) : true);
+
+/**
+ * Whether starting a takeaway is a main action. At a dine-in-only place it
+ * stays, for the occasional parcel, but quietly.
+ */
+export const takeawayIsMain = (details: ShopDetails | null): boolean => details?.service !== "dineIn";
 
 /** A takeaway-only kitchen's one price list is "Takeaway", never "Dine-In". */
 export const firstPriceListName = (service: Service): string => (service === "takeaway" ? "Takeaway" : "Dine-In");

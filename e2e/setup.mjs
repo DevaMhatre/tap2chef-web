@@ -224,6 +224,43 @@ for (const [w, h, scheme, name] of sizes) {
   await page.getByRole("heading", { name: "Orders", level: 1 }).waitFor();
   check(!(await shows(page, "Tables")), "takeaway: the desktop sidebar has no Tables either");
   await shot("takeaway-desktop");
+
+  // 10e: the name is the door to what the setup asked.
+  await page.getByRole("button", { name: "Chai Point" }).filter({ visible: true }).click();
+  await page.getByRole("dialog").getByText("How customers order").waitFor();
+  await shot("door-desktop");
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await page.setViewportSize({ width: 360, height: 740 });
+  const door = () => page.getByRole("button", { name: /Chai Point/ }).filter({ visible: true }).first();
+  const sheet = page.getByRole("dialog");
+  await door().click();
+  check(await sheet.getByRole("button", { name: "Save" }).isDisabled(), "door: nothing to save until something changes");
+  await sheet.getByLabel("Name").fill("Typo");
+  await sheet.getByRole("button", { name: "Cancel" }).click();
+  await page.waitForTimeout(400);
+  await door().click();
+  check((await sheet.getByLabel("Name").inputValue()) === "Chai Point", "door: Cancel keeps what was stored");
+  await sheet.getByRole("checkbox", { name: /Dine-in/ }).click();
+  await shot("door-phone");
+  await sheet.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("link", { name: "Tables" }).waitFor();
+  check(true, "door: adding dine-in brings the Tables tab");
+  await page.getByRole("link", { name: "Tables" }).click();
+  await page.getByText("How many tables?").waitFor();
+  check(true, "door: a kitchen with no tables yet is asked how many");
+
+  await door().click();
+  await sheet.getByLabel("Name").fill("Chai Point Express");
+  await sheet.getByRole("checkbox", { name: /Takeaway/ }).click();
+  await page.emulateMedia({ colorScheme: "dark" });
+  await shot("door-phone-dark");
+  await sheet.getByRole("button", { name: "Save" }).click();
+  check(await shows(page, "Chai Point Express"), "door: the new name is in the header");
+  await page.getByRole("link", { name: "Orders" }).click();
+  const takeaway = page.getByRole("button", { name: "Takeaway" });
+  check((await takeaway.getAttribute("class")).includes("bg-primary/12"), "door: dine-in only makes + Takeaway quiet, not gone");
+  check(await page.getByText("Tap a table to start an order.", { exact: true }).isVisible(), "door: dine-in only points to the tables");
+  await shot("orders-dine-in-only-dark");
   check(errors.length === 0, `offline: no console errors${errors.length ? `: ${errors.join(" | ")}` : ""}`);
   await ctx.close();
 }

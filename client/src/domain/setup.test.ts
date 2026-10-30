@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { firstPriceListName, readDishRows, readService, showsTables, stepAfterService, type DishRow } from "./setup";
+import { choiceOf, firstPriceListName, readDishRows, readService, showsTables, stepAfterService, takeawayIsMain, type DishRow } from "./setup";
 import { STARTER_MENUS } from "./starterMenus";
 
 describe("how customers order", () => {
@@ -22,6 +22,17 @@ describe("how customers order", () => {
     expect(showsTables({ name: "R", service: "dineIn" })).toBe(true);
     // Set up before the question existed: as it always was.
     expect(showsTables(null)).toBe(true);
+  });
+
+  it("makes takeaway the quiet action only where customers sit down", () => {
+    expect(takeawayIsMain({ name: "R", service: "dineIn" })).toBe(false);
+    expect(takeawayIsMain({ name: "R", service: "both" })).toBe(true);
+    expect(takeawayIsMain({ name: "R", service: "takeaway" })).toBe(true);
+    expect(takeawayIsMain(null)).toBe(true);
+  });
+
+  it("turns an answer back into the tiles it came from", () => {
+    for (const service of ["dineIn", "takeaway", "both"] as const) expect(readService(choiceOf(service))).toEqual({ ok: true, value: service });
   });
 
   it("names a takeaway-only kitchen's price list Takeaway", () => {

@@ -9,11 +9,13 @@ import {
   MdInsights,
   MdCheckCircle,
   MdCloudDone,
+  MdExpandMore,
 } from "react-icons/md";
 import { useRestaurantName, useShowsTables } from "../usecases/useRestaurant";
 import { useDeviceSession } from "../usecases/useSignIn";
 import { useSync } from "../usecases/useSync";
 import { AccountSheet } from "./features/account/AccountSheet";
+import { RestaurantSheet } from "./features/restaurant/RestaurantSheet";
 import { SafeCopyCard } from "./features/setup/SafeCopyCard";
 
 const NAV: { to: string; label: string; icon: IconType }[] = [
@@ -57,6 +59,26 @@ function SavedBadge() {
   );
 }
 
+// The restaurant's name is the owner's door to what they told the setup. The
+// chevron says it opens something, as a title menu does.
+function RestaurantDoor({ name, className }: { name: string; className: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        aria-haspopup="dialog"
+        onClick={() => setOpen(true)}
+        className={`group -my-1.5 flex min-h-11 min-w-0 items-center gap-0.5 text-left ${className}`}
+      >
+        <span className="min-w-0 truncate font-extrabold tracking-tight transition-opacity group-active:opacity-60">{name}</span>
+        <MdExpandMore aria-hidden className="shrink-0 text-xl text-muted" />
+      </button>
+      <RestaurantSheet open={open} onClose={() => setOpen(false)} />
+    </>
+  );
+}
+
 export default function AppShell() {
   // An open order is a pushed screen: it brings its own bar, and on a phone
   // its cart takes the tab bar's place under the thumb.
@@ -77,7 +99,7 @@ export default function AppShell() {
     <div className="min-h-dvh bg-bg text-ink md:flex">
       {/* Sidebar: tablet and desktop */}
       <aside className="hidden w-60 shrink-0 flex-col gap-1 border-r border-line bg-surface p-4 md:flex">
-        <div className="mb-6 truncate px-3 text-xl font-extrabold tracking-tight">{name}</div>
+        <RestaurantDoor name={name} className="mb-4 px-3 text-xl" />
         {nav.map(({ to, label, icon: Icon }) => (
           <NavLink key={to} to={to} className={linkClass}>
             <Icon className="text-lg" />
@@ -88,7 +110,7 @@ export default function AppShell() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <header data-pushed={pushed} className="sticky top-0 z-10 flex data-[pushed=true]:hidden items-center justify-between gap-3 border-b border-line bg-surface/95 px-4 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur">
-          <span className="min-w-0 truncate text-lg font-extrabold tracking-tight md:invisible">{name}</span>
+          <RestaurantDoor name={name} className="text-lg md:invisible" />
           <SavedBadge />
         </header>
 
