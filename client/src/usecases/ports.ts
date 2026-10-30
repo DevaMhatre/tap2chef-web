@@ -183,6 +183,22 @@ export interface SetupStore {
   dismissCard(): Promise<void>;
 }
 
+/** The two ways a web app can reach a receipt printer from a phone. */
+export type PrinterRoute = "bluetooth" | "usb";
+
+export type PrinterTry =
+  /** This browser can't use that route at all (not Chrome on Android, say). */
+  | { outcome: "unsupported" }
+  /** Nothing was picked: the printer wasn't in the list, or the list was closed. */
+  | { outcome: "cancelled" }
+  | { outcome: "printed"; name: string; detail: string }
+  | { outcome: "failed"; name?: string; detail: string };
+
+/** Trying a printer by one route: find it, and print a test KOT. */
+export interface PrinterCheck {
+  tryPrint(route: PrinterRoute): Promise<PrinterTry>;
+}
+
 export interface Clock {
   now(): number;
 }
@@ -202,6 +218,7 @@ export interface Ports {
   drawer: DrawerRepository;
   account: AccountService;
   phones: PhonesService;
+  printer: PrinterCheck;
   shop: ShopRepository;
   setup: SetupStore;
   ids: IdGenerator;

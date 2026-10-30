@@ -145,6 +145,9 @@ Small steps:
 Said no to (for now, not forever): asking how customers pay (Cash and UPI on by default; the UPI ID comes with the UPI QR), asking the location at setup, role names when adding a person, an owner's home on the day's numbers, a sixth tab, one-tap Google sign-in, "Snap your menu", billing and subscriptions — each waits for the first owner's feedback or for a second restaurant.
 
 ### 9. Printing / KOT
+The first restaurant prints KOTs on a 58 mm EZO thermal printer (sold with USB and Bluetooth); printing decides whether the app is used during service.
+- [ ] 9a Printer check at `/printer-check` (any phone, set up or not): tries Bluetooth LE and USB for real and prints a test KOT; a screenshot says which way reaches the printer. **Built, commit pending; to be run beside the printer.**
+- [ ] 9b KOT on Send, by the way 9a finds (Web Bluetooth on Android, USB, or a helper app for classic-Bluetooth printers), behind one port
 - [ ] Web Bluetooth (Android) / print dialog / WhatsApp share, behind one port
 
 ---
@@ -345,3 +348,4 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 - **2026-10-30** — 10d committed. 10e brainstormed (rarely opened, never mid-rush; others bury it in settings), approved and built with what exists today: the name as the door to the setup's answers. Caught on the way: the sheet's Save and form first held two copies of the typing; dine-in only still said "start a takeaway"; the unticked tile circle was nearly invisible on grey. Committed `8f72f3a`.
 - **2026-10-30** — 10e (details) committed. 10f brainstormed (the waiter's phone signed in with the owner's email, no way to take it back; WhatsApp Web linking), approved and built: phone records, join by QR or code, the phones list, Remove that clears the phone, the owner-only rule on the server. Caught on the way: closing a sheet mid-request left an aborted fetch unhandled. Committed `f626879`.
 - **2026-10-30** — 10f committed. Questions for the owner written in Marathi for WhatsApp (answers pending). Built 10f+: two phones at one table join into one bill; a shared token says "· twice". Proved in the browser with the waiter offline, and that the check fails without the join. Committed `f368e7f`. The owner's answers came back and are recorded as decisions; 6d dropped.
+- **2026-10-30** — 10f+ and the owner's answers committed. The owner's printer is a 58 mm EZO; a web page reaches only Bluetooth LE or USB printers, so 9a, a printer check page, was built to settle it beside the printer. Commit pending.

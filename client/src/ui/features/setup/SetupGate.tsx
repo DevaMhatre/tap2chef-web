@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { useLocation } from "react-router";
 import { useShopDetails } from "../../../usecases/ShopProvider";
 import { useNeedsSetup } from "../../../usecases/useSetup";
+import PrinterCheckPage from "../../pages/PrinterCheckPage";
 import { JoinFlow } from "./JoinFlow";
 import { SetupFlow } from "./SetupFlow";
 
@@ -13,6 +14,8 @@ export function SetupGate({ children }: { children: ReactNode }) {
   // A scanned code (/join#482913) or "Joining a restaurant?": before anything else.
   const { pathname, hash } = useLocation();
   if (pathname === "/join") return <JoinFlow linkCode={hash} />;
+  // A tool for us beside a real printer, on any phone, set up or not.
+  if (pathname === "/printer-check") return <PrinterCheckPage />;
   // Reading the phone's own storage takes a few milliseconds: show nothing
   // rather than flash the wrong screen, or tabs that are about to change.
   if (needsSetup === undefined || details === undefined) return null;
