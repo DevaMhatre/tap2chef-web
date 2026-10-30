@@ -72,8 +72,8 @@ A feature is marked `[x]` only when **all** of these hold:
 - [x] 5e Cancel a sent dish (part or all, optional reason, undo); move an order to a free table — `e501b07`, `52c906a`
 - [ ] Owner test: the restaurant runs one real lunch on it
 
-### 6. Bill settlement ✓ (6d after the owner test) (a table frees only when its bill settles)
-Brainstormed 2026-10-29 against Toast, Square and Petpooja. The discount is in; 6d waits for the owner test.
+### 6. Bill settlement ✓ (a table frees only when its bill settles)
+Brainstormed 2026-10-29 against Toast, Square and Petpooja. The discount is in; 6d was dropped after the owner's answers.
 - [x] 6a Domain: `settled` arm on the order state (payments + optional adjustment), exact-sum rule, payment-method correction — `cf54125`
 - [x] 6b Bill sheet (first version, one-tap Cash / UPI) — `6c6422f`, `0b344ad`, `abfa74c`
 - [x] 6c Settled today, payment correction (first version) — `681c009`, `de83682`, `d9be4fb`
@@ -81,7 +81,7 @@ Brainstormed 2026-10-29 against Toast, Square and Petpooja. The discount is in; 
 - [x] 6g Remove a wrong payment after Undo has gone (two devices took the whole bill, or a typo); it stays listed, struck through — `c2c9b67`
 - [x] Polish: the desktop order panel shows the discount, what's paid and what's still to pay — `c2c9b67`
 - [x] 6f Menu: collapsible categories on the Menu tab (4+ categories start collapsed; jump chips go); the order screen stays fully open — `008e4dc`
-- [ ] 6d UPI QR with the exact amount, drawn on the device from the owner's UPI ID, offline, no gateway; staff tap "Received". **After the owner test.**
+- [ ] ~~6d UPI QR on the device~~ Dropped 2026-10-30: the first restaurant already has a printed QR and a payment speaker
 
 Said no to: split by seat / by item / evenly (several payments per bill covers it), promotions engine, reopening a settled bill.
 
@@ -136,6 +136,7 @@ Small steps:
 - [x] 10d The app shapes itself to how customers order: no dine-in → no Tables tab, the takeaway screen is home. Domain `showsTables`; the shop's details read once above the app (`ShopProvider`), and the app waits for them so the tabs never change under the eye; four tabs, Orders as home, `/`, `/tables` and unknown links open Orders, the empty Orders says "Start a takeaway." Checked in `e2e/setup.mjs` at 360 and 1440; every other script re-run — `ef0443a`
 - [ ] 10e The restaurant's name in the header is the owner's door: details, people, phones, add a restaurant; staff tapping it see only who is using this phone. **Details done — `8f72f3a`;** people, phones and add a restaurant still to come. The name (header, and sidebar on wider screens) carries a chevron and opens "Restaurant": the name and how customers order, the setup's own tiles, Save only once something changed; the app reshapes at once. Dine-in only makes "+ Takeaway" tinted and the empty Orders says "Tap a table to start an order." `useRestaurantDetails`, `ServiceTiles` shared with the setup. People, phones and add a restaurant join the sheet with 10f, 10g and 10i; what staff see waits for 10g. Checked in `e2e/setup.mjs` at 360 and 1440, light and dark; every other script re-run
 - [x] 10f Add a phone: a QR and a 6-digit code on the owner's phone, the waiter's phone joins ("Join Sharma Dhaba?"); the list of phones with Remove. Server: `Device` records (owner / linked, label, last seen, removed), `LinkCode` (hashed, one per shop, 10 min, used once), `/api/devices` (code, list, remove, join), tokens name their device, an old token gets its record and a renewed token on its next sync, a removed phone is refused with "removed"; only the owner's own phone manages phones or pushes the restaurant's details. Phone: "Add a Phone" (QR drawn from tokens, the code, a fresh one on expiry, "Android phone joined"), the phones list with Remove (asked once), `/join#code` and "Joining a restaurant?" on a new phone, a linked phone's sheet read-only, a removed phone clears itself to a new one. `e2e/phones.mjs`: joined in 0.8 s, a removed phone cleared in 1.8 s — `f626879`
+- [x] 10f+ Several phones in one restaurant (added 2026-10-30, while waiting for the owner's answers): two orders at one table join into one bill by themselves; two takeaways with the same token both say "· twice". Domain `joinTableOrders`, `sharedTokens`; the order desk joins the moment it sees two; `e2e/together.mjs` (the waiter offline): one Table 2 bill at ₹320 on both phones within 2.3 s; without the join, two bills of ₹180 and ₹140 — `f368e7f`
 - [ ] 10g People: "Can they handle money and the menu when you're away?" (yes → manager, no → staff); a PIN to pick yourself on a shared phone; "by Ravi" on cancels and payments
 - [ ] 10h Screens and actions follow the table above, through `can()`; presets adjusted (a manager edits their restaurant's prices, not the brand's menu)
 - [ ] 10b Reads scoped per shop and one sync cursor per shop, so a phone that holds two restaurants never mixes them or skips one's records. Moved here 2026-10-30: it only matters once a phone holds two restaurants; it must also count a menu row with no `brandId` (written by a pre-brand tab) as the first brand's
@@ -153,6 +154,9 @@ Said no to (for now, not forever): asking how customers pay (Cash and UPI on by 
 Newest change first within each group. Format: decision — reason (date).
 
 ### Product and SaaS
+- The first restaurant's answers (2026-10-30, by WhatsApp): every waiter has his own phone; only the owner gives discounts; waiters take the money at the table; a manager may see the day's takings; the KOT prints on a 58 mm EZO thermal printer; UPI is a printed QR with a payment speaker; Zomato / Swiggy stay out of the app (tallied weekly), takeaway is paid on the spot; regulars sometimes pay later; some dishes are half / full. They run their service on EZO's POS app today but aren't attached to it; Tap2Chef still has to print their KOTs before they can switch. What EZO does is ours to look up, never a question for the owner (2026-10-30).
+- A waiter's cash goes to the counter at once, so a restaurant has one cash drawer: a cash payment on any phone counts in it, as built. No cash per waiter, no settling up at night (2026-10-30).
+- Consequences: a phone is a person (no PINs for now: no shared phone); discounts are the owner's alone, enforced on the server; printing the KOT (step 9) is what decides whether the app is used during service; the on-phone UPI QR (6d) is dropped (a printed QR and speaker already do it); aggregators are not entered; "pay later" and half / full portions are real but come after printing (2026-10-30).
 - SaaS from day one: account → shops → members; tenancy in the data model now, billing later — it is a subscription product (2026-10-29).
 - The niche is small restaurants (one owner, a few staff, two or three outlets at most), not chains; market products are inspiration, never imitation — Toast-style menu versioning rejected as chain-scale (2026-10-29).
 - The owner only ever sees "restaurants"; underneath, account → brand → shop. Adding one asks "Same menu as Sharma Biryani?": yes is a branch (a shop of that brand), no is a new brand. The biryani cook opening a café thinks "my second restaurant", never "a new brand" (2026-10-30).
@@ -194,6 +198,8 @@ Newest change first within each group. Format: decision — reason (date).
 - Phones signed in before phone records existed get one, and a renewed token, on their next sync: never asked to sign in again (2026-10-30).
 - The restaurant sheet holds only what the owner told the setup; a row appears only when its step works (no empty People / Phones / Add a restaurant). No address, GST or phone fields until something uses them; sign-in stays behind the saved pill; no confirmation before Save, as changing it back is one tap. Removing dine-in hides the floor but deletes nothing: an open table order stays reachable from Orders, and the tables return with dine-in. A restaurant from before the setup starts the sheet with its account's name and both ways (2026-10-30).
 - At a dine-in-only place "+ Takeaway" stays, tinted: a parcel still happens, but it isn't the screen's main action (2026-10-30).
+- A table has one bill: two orders at one table (two phones, offline or seconds apart) join into the earliest by themselves, dishes and payments moved, a billed bill reopening if it gains a dish. No merge button, nothing to decide mid-rush; every phone plans the same join, so they agree. A quantity edit landing in the same seconds as a join can be lost (whole-record last write wins) (2026-10-30).
+- Tokens stay plain numbers; two takeaways that share one both say "· twice" in Orders, and nothing is renumbered, as the customer heard it. Server-issued tokens need the internet; per-phone series (101, 201) read oddly all day. Revisit if the owner says waiters take parcels on their own phones (2026-10-30).
 - A takeaway-only kitchen never meets tables: four tabs, Orders as home (one tap to "+ Takeaway"), any link to the floor opens Orders. "Orders" keeps its name (delivery will live there too). Dine-in only keeps "+ Takeaway": a parcel at a sit-down place is common, and blocking it mid-rush with no way to change the answer (until 10e) costs a sale. No settings toggle: the setup answer is the switch. Toast and Square set a service mode per device in settings (2026-10-30).
 - The "keep a copy safe" card shows once, on Tables and Orders, only when online and not signed in: an action that can't work now isn't offered (2026-10-30).
 - 10b (per-shop reads and sync cursors) waits until just before 10i: no restaurant needs it until one phone holds two, and unlike 10a it doesn't change the stored data, so waiting costs nothing. The first owner's flow (10c–10h) comes first (2026-10-30).
@@ -236,7 +242,7 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 - The payment that leaves nothing to pay settles the bill; settling is never a separate step to forget (2026-10-29).
 - Cash and UPI only choose (Apple: a segmented control never acts); one filled **Settle ₹X** commits, then a completion moment (check, amount, "Hand back ₹200") for about a second over the floor, then Undo — a conscious step, and the feeling of a job done (2026-10-29).
 - A discount is typed as the final amount ("make it ₹850"), only downward, reason optional; no percentages, coupons or promotions engine. It covers rounding off and a regular's discount (2026-10-29).
-- The on-device UPI QR (6d) waits for the owner test. If they already have a payment speaker and a printed QR, it adds little (2026-10-29).
+- The on-device UPI QR (6d) is dropped: the first restaurant has a printed QR and a payment speaker (2026-10-30).
 
 - A settled bill keeps its `subtotal` snapshot; the day's numbers read payments, never re-add lines (2026-10-29).
 - Bill refuses while a dish is unsent; staff Send or remove it first, never an automatic choice (2026-10-29).
@@ -279,21 +285,14 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 ## Open questions
 
 **For the restaurant owner**
-- Delivery: do Swiggy / Zomato orders get entered by hand, printed from the tablet, or kept apart? → decides what the Delivery choice in setup turns on.
-- Which starter dishes and prices would a biryani shop and a café expect to see? → the starter lists for "What do you sell?".
-- How many phones or tablets would you use at once? Do waiters use their own phones, or one shared device? → decides how much of 8e comes first.
-- Who should be able to give a discount or see the day's takings when you are not there? → checks the presets.
-- Who takes the money: the counter, or the waiter at the table? Do you print the bill today?
-- Do regulars pay later ("likh lo")? How do you keep track? → decides a "pay later" method.
+- The KOT printer (EZO 58D, 58 mm thermal, sold with USB and Bluetooth): does it show up to Web Bluetooth (Bluetooth Low Energy) on an Android phone, or only to classic Bluetooth? → decides how step 9 prints (Web Bluetooth, USB, or a helper app). Answered by trying it in the restaurant, not by asking.
+- Which starter dishes would a biryani shop and a café expect to see? → corrects the draft starter lists.
 - Do friends split one bill across several UPI payments?
 - Do you charge GST on the bill; are you GST-registered? → tax lines and sequential bill numbers (two offline devices could collide on them).
-- How do customers pay UPI today: printed QR, payment speaker, or your own phone? → decides 6d.
-- How often do you discount or round off a bill, and who decides?
-- How does an order reach the kitchen today (shouted, paper KOT, the waiter walks in)? → decides what Send produces before printing (step 9).
-- Do you change or cancel something after the kitchen has it? How often, and who decides?
+- How often do you discount or round off a bill?
+- Do you change or cancel something after the kitchen has it? How often?
 - Do customers move tables, or split one table's bill?
 - Takeaway: do you call out a token number, a name, or both?
-- Do you sell anything as half / full (or small / large)? → decides the `portions` pricing arm.
 - When a dish runs out mid-service, how do you tell the staff today? → shapes the availability toggle.
 
 **To verify**
@@ -305,8 +304,6 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 - After 2026-11-11: remove the .cloud server blocks and `certbot delete --cert-name devamhatre.cloud` / `pos.devamhatre.cloud`, or renewals will warn by email.
 - A record set aside by the server stays on the device unsent, with only a console warning; nobody sees it. Fine while every device is the owner's; staff devices (8e) need it shown.
 - A device pushes shop records under the shop it works in: right while a device holds one shop; a device switching shops needs per-shop reads first (see below).
-- Two devices opening the same table offline make two orders; the earliest is shown, the other is hidden until a merge exists. Sync now makes this reachable: a waiter and the counter both starting table 4 while one is offline.
-- Two offline devices can give two takeaways the same token number.
 - Send has no kitchen output yet: no KOT print or kitchen screen until step 9 / sync.
 - `shopDetails` pushed to an API from before 10c is refused as an unknown table and set aside, so a setup done in the minutes between the site and the API updating never reaches the account. Deploy the API first, or accept it for that window.
 - Renaming the restaurant changes `shopDetails` (every phone's header) but not the server's account name, which only the sign-in sheet's greeting reads. Fix when the server learns to read `shopDetails`, or with 10i's restaurant list.
@@ -347,3 +344,4 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 - **2026-10-30** — 10c committed. 10d brainstormed (a takeaway counter is two taps from an order today; Toast / Square hide it in a per-device setting), approved and built: the app shapes itself from the setup answer. Committed `ef0443a`.
 - **2026-10-30** — 10d committed. 10e brainstormed (rarely opened, never mid-rush; others bury it in settings), approved and built with what exists today: the name as the door to the setup's answers. Caught on the way: the sheet's Save and form first held two copies of the typing; dine-in only still said "start a takeaway"; the unticked tile circle was nearly invisible on grey. Committed `8f72f3a`.
 - **2026-10-30** — 10e (details) committed. 10f brainstormed (the waiter's phone signed in with the owner's email, no way to take it back; WhatsApp Web linking), approved and built: phone records, join by QR or code, the phones list, Remove that clears the phone, the owner-only rule on the server. Caught on the way: closing a sheet mid-request left an aborted fetch unhandled. Committed `f626879`.
+- **2026-10-30** — 10f committed. Questions for the owner written in Marathi for WhatsApp (answers pending). Built 10f+: two phones at one table join into one bill; a shared token says "· twice". Proved in the browser with the waiter offline, and that the check fails without the join. Committed `f368e7f`. The owner's answers came back and are recorded as decisions; 6d dropped.
