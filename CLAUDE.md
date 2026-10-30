@@ -45,15 +45,20 @@ Tap2Chef is a subscription product. Multi-tenancy is in the data model now,
 even while billing and login come later.
 
 ```
-Account   (the subscriber; plan, billing)    ← an owner pays and becomes its admin
- └─ Shop  (one restaurant outlet)            ← an owner can run several
-     └─ Members (users with a role here)     ← staff work in one or more shops
+Account     (the owner; plan, billing later)   ← signs in with email; has everything
+ └─ Brand   ("Sharma Biryani"; owns a MENU)    ← a new café is a new brand
+     └─ Shop  (one outlet: "Andheri")          ← tables, staff, drawer, orders
+         └─ Members (people with a role here)  ← staff work in one or more shops
 ```
 
-- **Menu is account-level; shops inherit it.** One catalog per account. A new
-  shop gets the whole menu on day one and stores only its differences (a price,
-  "not sold here") as sparse overrides. One level of inheritance, nothing more.
-  A single-shop owner never sees any of it.
+- **The owner only ever sees "restaurants".** Brand and shop are our words.
+  Adding a restaurant asks one question, "Same menu as Sharma Biryani?": yes
+  makes a shop of that brand, no makes a new brand. One brand with one shop
+  (almost everyone) never sees either level.
+- **Menu is brand-level; shops inherit it.** One catalog per brand. A new shop
+  of the brand gets the whole menu on day one and stores only its differences
+  (a price, "not sold here") as sparse overrides. One level of inheritance,
+  nothing more. A café's menu never mixes with the biryani shop's.
 - **Permissions, not role names.** Code asks `can(member, 'menu.edit', shopId)`,
   never `role === 'manager'`. `owner` / `manager` / `staff` are preset bundles of
   permissions (data, not code), so custom roles later need no code change. A

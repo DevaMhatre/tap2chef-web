@@ -102,11 +102,46 @@ Brainstormed 2026-10-29 (real life: the owner's data lives on one phone; the rus
 - [x] 8b Server: tenancy gate (a query without `accountId` throws), `POST /api/sync/push` and `GET /api/sync/pull?shopId&since`, device tokens, `can()` per table, a client–server contract test; 25 tests including isolation and a push overtaking a slow one — `264f7bd`
 - [x] 8c Owner sign-in by email code: the "Saved on this device" pill opens "Keep a Copy Safe" → email → 6-digit code (signs in on the sixth digit) → the restaurant's name, only for a new owner → a completion moment. Server: codes hashed, 10 min, 5 tries counted atomically, used once, 30 s before another, rate limits in production; Resend in production, the console elsewhere; `npm run dev:memory` runs the API without MongoDB. Browser-checked at 360 / 820 / 1440, light and dark, offline, and a second phone joining. **Not to go live before 8d**: the sheet says the work is kept in the account, which is true only once sync runs — `71c2b93`
 - [x] 8d Sync: the device pushes its outbox (one change per record, as it is now, 500 at a time), then pulls "changes since N" for its shop; a pulled record with an edit still waiting here keeps ours. A change is sent ~300 ms after it is made; a pull every 3 s while signed in, online and on screen. Shop records go under the device's shop (old-build and mid-sign-in rows included); one record the server refuses is set aside, never blocking the rest; a device the server no longer knows goes back to working on its own, losing nothing. The pill says "Saved online" or "Saved on this device". Two devices in Chrome: the waiter's Send reached the counter in 2.3 s, the counter's Bill reached the floor in 1.3 s, an expense noted offline arrived 2.3 s after reconnecting — `b22c829`
-- [ ] 8e Add a device (QR / 6-digit code from the owner's phone); members with PINs; "by Ravi" on cancels and payments; screens gated by `can()`
+- [ ] ~~8e~~ Folded into step 10 (10f–10h), redesigned with the owner's experience first
 - [x] API deployed behind nginx at `tap2chef.devamhatre.com/api`: `deploy/vps/setup-api.sh` run on the VPS, pm2 on 127.0.0.1:8100, Atlas `tap2chef` database, Resend verified for devamhatre.com. Checked from outside: health ok, sync refuses without a token, port 8100 unreachable. Founder signed in on a real phone (code arrived by email) and synced two devices — `93fc505`
 - [ ] Later: shop overrides table and a second-shop screen; subscriptions and billing
 
 Said no to: an account before first use, passwords, staff emails or logins, a web dashboard to add devices, permission matrices (three presets, as data), a second-shop screen before a second shop exists.
+
+### 10. Setting up a restaurant, and who's who
+Decided 2026-10-30 with the founder, and cross-checked against the Steve Jobs Product Test before writing. The working core (orders, bills, expenses, sync) stays as it is; this step is the shape around it: what a new owner goes through, what the owner has that nobody else does, and how a restaurant grows into two or a café. Built one small step at a time; the first owner's feedback can reorder 10f–10i.
+
+**The setup: 4–5 screens, each one changes what they see today**
+1. Sign in: email → code.
+2. "What's your restaurant called?" → the header and the bill.
+3. "How do customers order?" Dine-in · Takeaway · Delivery → the app shapes itself (no dine-in, no tables anywhere).
+4. "How many tables?" (dine-in only) → the floor.
+5. "What do you sell?" Biryani & meals · Café · Fast food · Sweets & snacks · Cloud kitchen → tap the dishes you sell from a starter list, type each price, add your own. The menu exists before the first order.
+→ "You're ready" → the service screen (Tables, or Takeaway).
+
+**Who's who**
+
+| | Owner | Manager | Staff |
+|---|---|---|---|
+| Orders, bills, payments, cancel with reason, out today | ✓ | ✓ | ✓ |
+| Discounts; correct or remove a payment | ✓ | ✓ | – |
+| Today, cash drawer, expenses | ✓ all restaurants | ✓ their restaurant | note an expense only |
+| Menu and prices | ✓ | their restaurant's prices | – |
+| Tables | ✓ | ✓ | – |
+| People, phones, details, add a restaurant | ✓ | – | – |
+
+Small steps:
+- [ ] 10a Brand level in the data: the menu belongs to a brand; shops inherit it; today's account menu becomes the first brand's, with nothing visible changing
+- [ ] 10b Reads scoped per shop and one sync cursor per shop, so a phone that holds two restaurants never mixes them or skips one's records
+- [ ] 10c The setup above for a new owner, offline never blocking (the account attaches when there's internet); a phone that already has records gets a one-time "Keep a copy of Sharma Dhaba safe" card instead
+- [ ] 10d The app shapes itself to how customers order: no dine-in → no Tables tab, the takeaway screen is home
+- [ ] 10e The restaurant's name in the header is the owner's door: details, people, phones, add a restaurant; staff tapping it see only who is using this phone
+- [ ] 10f Add a phone: a QR and a 6-digit code on the owner's phone, the waiter's phone joins ("Join Sharma Dhaba?"); the list of phones with Remove
+- [ ] 10g People: "Can they handle money and the menu when you're away?" (yes → manager, no → staff); a PIN to pick yourself on a shared phone; "by Ravi" on cancels and payments
+- [ ] 10h Screens and actions follow the table above, through `can()`; presets adjusted (a manager edits their restaurant's prices, not the brand's menu)
+- [ ] 10i Add a restaurant: "Same menu as Sharma Biryani?" → a branch or a new menu; the area is asked here; the header name switches restaurants; the owner's Today shows every restaurant, one row each
+
+Said no to (for now, not forever): asking how customers pay (Cash and UPI on by default; the UPI ID comes with the UPI QR), asking the location at setup, role names when adding a person, an owner's home on the day's numbers, a sixth tab, one-tap Google sign-in, "Snap your menu", billing and subscriptions — each waits for the first owner's feedback or for a second restaurant.
 
 ### 9. Printing / KOT
 - [ ] Web Bluetooth (Android) / print dialog / WhatsApp share, behind one port
@@ -120,11 +155,18 @@ Newest change first within each group. Format: decision — reason (date).
 ### Product and SaaS
 - SaaS from day one: account → shops → members; tenancy in the data model now, billing later — it is a subscription product (2026-10-29).
 - The niche is small restaurants (one owner, a few staff, two or three outlets at most), not chains; market products are inspiration, never imitation — Toast-style menu versioning rejected as chain-scale (2026-10-29).
-- Menu is account-level; a shop stores only sparse overrides, one level of inheritance — Square/Toast/Petpooja converge here; small owners need no more (2026-10-29).
+- The owner only ever sees "restaurants"; underneath, account → brand → shop. Adding one asks "Same menu as Sharma Biryani?": yes is a branch (a shop of that brand), no is a new brand. The biryani cook opening a café thinks "my second restaurant", never "a new brand" (2026-10-30).
+- Menu is brand-level; a shop stores only sparse overrides, one level of inheritance — so a second biryani branch gets the menu on day one and a café's menu never mixes with it. Square shares one item list across every location; Petpooja keeps one per outlet (2026-10-30).
 - Code checks permissions, never role names; owner / manager / staff are preset bundles (data) — custom roles later need no code change (2026-10-29).
 - Owner signs a device in once; staff switch on shared devices with a 4-digit PIN — restaurants share tablets (2026-10-29).
 - A lapsed or unreachable subscription never blocks taking an order mid-service (2026-10-29).
-- No account until it pays off: the app works unsigned, and signing in is offered at "Add a device" or "Keep a copy safe"; the device's own records come along — no setup before value, nothing running breaks (2026-10-29).
+- Account first, never a wall: a new restaurant signs in during setup, so it is backed up and ready for a second phone from minute one; offline on first open, setup carries on and the account attaches later. A phone that already has records gets a one-time card instead of the setup. Replaces "no account until it pays off": a hidden door meant most owners would never back up (2026-10-30).
+- Setup asks only what changes the app today, never something only we want to know: name, how customers order, tables (dine-in only), what they sell. Payment methods (Cash and UPI by default) and the location are asked when they matter (2026-10-30).
+- "How do customers order?" shapes the app: a takeaway-only cloud kitchen never sees tables. Every other POS gives every restaurant the same screens (2026-10-30).
+- "What do you sell?" leads to a starter list of dishes to tap and price, so the menu exists before the first order; the empty menu is where owners give up (2026-10-30).
+- Everyone opens to the service screen; the owner has more tabs, not another home. The owner is usually the cashier at 8 pm (2026-10-30).
+- The owner's own things (people, phones, details, add a restaurant, switch restaurant) live behind the restaurant's name in the header, not a sixth tab (2026-10-30).
+- Adding a person asks "Can they handle money and the menu when you're away?" instead of role names; yes is manager, no is staff (2026-10-30).
 - Account and shop ids are made on the device at first use, and the server adopts them at sign-up, so no record is ever re-tagged; the old `local-…` tenant became the account id (2026-10-29).
 - Signing in lives behind the "Saved on this device" pill, the one place that already talks about where the work is kept — no Settings screen to add (2026-10-29).
 - The code signs in by itself on its sixth digit, with no button; a wrong code clears the field. Offline or a server fault is said quietly beside the field, never in red on it: red means the typed text is wrong (2026-10-29).
@@ -224,6 +266,8 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 ## Open questions
 
 **For the restaurant owner**
+- Delivery: do Swiggy / Zomato orders get entered by hand, printed from the tablet, or kept apart? → decides what the Delivery choice in setup turns on.
+- Which starter dishes and prices would a biryani shop and a café expect to see? → the starter lists for "What do you sell?".
 - How many phones or tablets would you use at once? Do waiters use their own phones, or one shared device? → decides how much of 8e comes first.
 - Who should be able to give a discount or see the day's takings when you are not there? → checks the presets.
 - Who takes the money: the counter, or the waiter at the table? Do you print the bill today?
@@ -278,3 +322,4 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 - **2026-10-29** — 8d built: push / pull sync with the keep-ours rule, `useSync` timing, the pill says where the work is; two-device browser script (`e2e/sync.mjs`). Caught: a test that passed without its rule; a flaky live-query count. 8a–8d committed, ready to go live together once the VPS has the API. Committed `b22c829`.
 - **2026-10-30** — Read the VPS (owner ran read-only commands): no MongoDB, pm2 runs the POS on *:8000, no root crontab. Server now binds to `HOST` (127.0.0.1 on the VPS), trusts nginx in production, stops without its database; CI publishes the `api` branch; `deploy/vps/setup-api.sh` + updater written and dry-run against a copy of the live nginx config (9 scenarios incl. nginx refusing and a failing release). Atlas chosen for the database.
 - **2026-10-30** — Step 8a–8d live: API set up on the VPS, sign-in by email code and two-device sync confirmed by the founder on real phones ("like a knife in the butter"). Next: 8e (add a device by code, staff PINs, "by Ravi").
+- **2026-10-30** — Designed the owner's experience with the founder (step 10): account → brand → shop with the owner seeing only "restaurants"; a 4–5 screen setup where each answer changes the app; owner / manager / staff; the header name as the owner's door. Cross-checked against the Steve Jobs test (cut: brand/outlet words, the owner's Today home, a sixth tab, payment and location questions, role names). Written into PLAN and CLAUDE.md; nothing built yet.
