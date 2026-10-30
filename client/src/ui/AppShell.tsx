@@ -10,7 +10,7 @@ import {
   MdCheckCircle,
   MdCloudDone,
 } from "react-icons/md";
-import { useRestaurantName } from "../usecases/useRestaurant";
+import { useRestaurantName, useShowsTables } from "../usecases/useRestaurant";
 import { useDeviceSession } from "../usecases/useSignIn";
 import { useSync } from "../usecases/useSync";
 import { AccountSheet } from "./features/account/AccountSheet";
@@ -69,13 +69,16 @@ export default function AppShell() {
   const atService = Boolean(atFloor || atOrders);
   // The restaurant's own name: it is their app.
   const name = useRestaurantName() ?? "Tap2Chef";
+  // A kitchen whose customers only take food away has no floor to show.
+  const tables = useShowsTables() !== false;
+  const nav = tables ? NAV : NAV.filter(({ to }) => to !== "/tables");
 
   return (
     <div className="min-h-dvh bg-bg text-ink md:flex">
       {/* Sidebar: tablet and desktop */}
       <aside className="hidden w-60 shrink-0 flex-col gap-1 border-r border-line bg-surface p-4 md:flex">
         <div className="mb-6 truncate px-3 text-xl font-extrabold tracking-tight">{name}</div>
-        {NAV.map(({ to, label, icon: Icon }) => (
+        {nav.map(({ to, label, icon: Icon }) => (
           <NavLink key={to} to={to} className={linkClass}>
             <Icon className="text-lg" />
             {label}
@@ -98,7 +101,7 @@ export default function AppShell() {
 
       {/* Bottom tab bar: phones */}
       <nav data-pushed={pushed} className="fixed inset-x-0 bottom-0 z-10 flex data-[pushed=true]:hidden border-t border-line bg-surface pb-[env(safe-area-inset-bottom)] md:hidden">
-        {NAV.map(({ to, label, icon: Icon }) => (
+        {nav.map(({ to, label, icon: Icon }) => (
           <NavLink key={to} to={to} className={tabClass}>
             <Icon className="text-2xl" />
             {label}

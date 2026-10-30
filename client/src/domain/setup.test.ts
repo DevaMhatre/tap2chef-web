@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { firstPriceListName, readDishRows, readService, stepAfterService, type DishRow } from "./setup";
+import { firstPriceListName, readDishRows, readService, showsTables, stepAfterService, type DishRow } from "./setup";
 import { STARTER_MENUS } from "./starterMenus";
 
 describe("how customers order", () => {
@@ -14,6 +14,14 @@ describe("how customers order", () => {
     expect(stepAfterService("dineIn")).toEqual({ step: "tables" });
     expect(stepAfterService("both")).toEqual({ step: "tables" });
     expect(stepAfterService("takeaway")).toEqual({ step: "menu" });
+  });
+
+  it("shows tables unless customers only take their food away", () => {
+    expect(showsTables({ name: "R", service: "takeaway" })).toBe(false);
+    expect(showsTables({ name: "R", service: "both" })).toBe(true);
+    expect(showsTables({ name: "R", service: "dineIn" })).toBe(true);
+    // Set up before the question existed: as it always was.
+    expect(showsTables(null)).toBe(true);
   });
 
   it("names a takeaway-only kitchen's price list Takeaway", () => {

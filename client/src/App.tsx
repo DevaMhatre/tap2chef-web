@@ -1,5 +1,8 @@
+import type { ReactNode } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { PortsProvider } from "./usecases/PortsProvider";
+import { ShopProvider } from "./usecases/ShopProvider";
+import { useShowsTables } from "./usecases/useRestaurant";
 import type { Ports } from "./usecases/ports";
 import { dexieMenuRepository } from "./infrastructure/db/dexieMenuRepository";
 import { dexieDayRepository } from "./infrastructure/db/dexieDayRepository";
@@ -45,14 +48,15 @@ const ports: Ports = {
 export default function App() {
   return (
     <PortsProvider ports={ports}>
+      <ShopProvider>
       <UndoToastProvider>
         <CompletionProvider>
         <BrowserRouter>
           <SetupGate>
           <Routes>
             <Route element={<AppShell />}>
-              <Route index element={<Navigate to="/tables" replace />} />
-              <Route path="tables" element={<TablesPage />} />
+              <Route index element={<Home />} />
+              <Route path="tables" element={<NoTables fallback={<TablesPage />} />} />
               <Route path="tables/:tableId" element={<OrderPage />} />
               <Route path="orders" element={<OrdersPage />} />
               <Route path="orders/settled" element={<SettledPage />} />
@@ -60,13 +64,25 @@ export default function App() {
               <Route path="menu" element={<MenuPage />} />
               <Route path="expenses" element={<ExpensesPage />} />
               <Route path="today" element={<Today />} />
-              <Route path="*" element={<Navigate to="/tables" replace />} />
+              <Route path="*" element={<Home />} />
             </Route>
           </Routes>
           </SetupGate>
         </BrowserRouter>
         </CompletionProvider>
       </UndoToastProvider>
+      </ShopProvider>
     </PortsProvider>
   );
+}
+
+// Home is where the service happens: the floor, or for a kitchen with no
+// tables, its orders.
+function Home() {
+  return <Navigate to={useShowsTables() === false ? "/orders" : "/tables"} replace />;
+}
+
+/** A kitchen with no tables never lands on an empty floor, whatever link it followed. */
+function NoTables({ fallback }: { fallback: ReactNode }) {
+  return useShowsTables() === false ? <Navigate to="/orders" replace /> : fallback;
 }

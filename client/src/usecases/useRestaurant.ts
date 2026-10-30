@@ -1,15 +1,19 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
-import type { ShopDetails } from "../domain/setup";
+import { useSyncExternalStore } from "react";
+import { showsTables } from "../domain/setup";
 import { usePorts } from "./PortsProvider";
+import { useShopDetails } from "./ShopProvider";
 import { useLocalSetup } from "./useSetup";
 import { useDeviceSession } from "./useSignIn";
 
-/** The restaurant as its owner described it: undefined while reading, null before setup. */
-export function useShopDetails(): ShopDetails | null | undefined {
-  const { shop } = usePorts();
-  const [details, setDetails] = useState<ShopDetails | null>();
-  useEffect(() => shop.subscribe(setDetails), [shop]);
-  return details;
+export { useShopDetails } from "./ShopProvider";
+
+/**
+ * Whether the app shows tables: not for a kitchen whose customers only take
+ * their food away. Undefined while reading.
+ */
+export function useShowsTables(): boolean | undefined {
+  const details = useShopDetails();
+  return details === undefined ? undefined : showsTables(details);
 }
 
 /**

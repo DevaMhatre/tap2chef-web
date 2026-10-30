@@ -132,6 +132,7 @@ for (const [w, h, scheme, name] of sizes) {
   check(page.url().endsWith("/tables") && (await page.locator("a[href^='/tables/']").count()) === 6, `${name}: starts on the floor, 6 tables`);
   check(await shows(page, "Sharma Dhaba"), `${name}: the header says Sharma Dhaba`);
   check(!(await page.getByText("Keep a copy of").isVisible()), `${name}: signed in, so no card`);
+  check(await shows(page, "Tables"), `${name}: a dine-in restaurant keeps its Tables tab`);
   await shot("floor");
   await page.getByRole("link", { name: "Menu" }).first().click();
   await page.getByRole("heading", { name: "Menu", level: 1 }).waitFor();
@@ -204,6 +205,25 @@ for (const [w, h, scheme, name] of sizes) {
   await shot("signed-in");
   await page.getByRole("button", { name: "Done" }).click();
   check(!(await page.getByText("Keep a copy of").isVisible()), "card: gone once signed in");
+
+  // 10d: a kitchen with no tables never meets them.
+  const tabs = async () => page.getByRole("link").evaluateAll((els) => els.filter((e) => e.checkVisibility()).map((e) => e.textContent.trim()).filter(Boolean));
+  check(JSON.stringify(await tabs()) === JSON.stringify(["Orders", "Menu", "Expenses", "Today"]), `takeaway: four tabs (${(await tabs()).join(", ")})`);
+  check(await page.getByText("Start a takeaway.", { exact: true }).isVisible(), "takeaway: the empty Orders says Start a takeaway.");
+  await shot("takeaway-phone");
+  for (const path of ["/", "/tables", "/somewhere"]) {
+    await page.goto(`${BASE}${path}`);
+    await page.getByRole("heading", { name: "Orders", level: 1 }).waitFor();
+    check(page.url().endsWith("/orders"), `takeaway: ${path} opens Orders`);
+  }
+  await page.getByRole("button", { name: "Takeaway" }).click();
+  await page.waitForURL(/\/orders\/.+/);
+  check(true, "takeaway: one tap from home starts an order");
+  await page.goto(`${BASE}/orders`);
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.getByRole("heading", { name: "Orders", level: 1 }).waitFor();
+  check(!(await shows(page, "Tables")), "takeaway: the desktop sidebar has no Tables either");
+  await shot("takeaway-desktop");
   check(errors.length === 0, `offline: no console errors${errors.length ? `: ${errors.join(" | ")}` : ""}`);
   await ctx.close();
 }

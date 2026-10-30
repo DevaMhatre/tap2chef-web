@@ -18,6 +18,12 @@ export function readService(choice: { dineIn: boolean; takeaway: boolean }): Res
 
 export const servesDineIn = (service: Service): boolean => service !== "takeaway";
 
+/**
+ * Whether the app shows tables at all. A restaurant set up before this
+ * question existed has no answer, and keeps what it always had.
+ */
+export const showsTables = (details: ShopDetails | null): boolean => (details ? servesDineIn(details.service) : true);
+
 /** A takeaway-only kitchen's one price list is "Takeaway", never "Dine-In". */
 export const firstPriceListName = (service: Service): string => (service === "takeaway" ? "Takeaway" : "Dine-In");
 
