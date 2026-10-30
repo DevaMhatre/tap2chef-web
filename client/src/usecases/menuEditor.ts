@@ -13,7 +13,8 @@ import {
   type NameError,
   type ProfileId,
 } from "../domain/menu";
-import { placeAt, sortByOrder, type Ordered } from "../domain/ordering";
+import { keyBetween, placeAt, sortByOrder, type Ordered } from "../domain/ordering";
+import type { NewDish } from "../domain/setup";
 import { err, ok, type Result } from "../domain/result";
 import { applyChanges } from "./applyChanges";
 import type { IdGenerator, MenuChange, MenuRecord, MenuRepository, MenuSnapshot } from "./ports";
@@ -38,6 +39,12 @@ export type MenuCommands = {
   renameProfile(id: ProfileId, name: string): Promise<Result<MenuProfile, NameError>>;
   moveProfile(id: ProfileId, toIndex: number): Promise<void>;
   removeProfile(id: ProfileId): Promise<Result<Undo, "lastProfile">>;
+  /**
+   * The setup's dishes, in one write: each at one price on every price list,
+   * in a category of that name (made if missing). With no menu yet, its one
+   * price list is made first, named `firstList`.
+   */
+  addDishes(dishes: readonly NewDish[], firstList: string): Promise<void>;
 };
 
 export type MenuEditor = {
@@ -220,6 +227,44 @@ export function createMenuEditor(repository: MenuRepository, ids: IdGenerator): 
     },
     renameProfile: profiles.rename,
     moveProfile: profiles.move,
+
+    addDishes: (dishes, firstList) =>
+      run("addDishes", (menu) => {
+        const changes: MenuChange[] = [];
+        const profiles = [...menu.profiles];
+        if (profiles.length === 0) {
+          const first: MenuProfile = { id: ids.newId() as ProfileId, name: firstList, sortKey: keyBetween() };
+          profiles.push(first);
+          changes.push({ op: "put", table: "profiles", record: first });
+        }
+
+        const categories = sortByOrder(menu.categories);
+        const byName = new Map(categories.map((c) => [c.name.toLowerCase(), c]));
+        let lastCategoryKey = categories.at(-1)?.sortKey;
+        const lastItemKey = new Map<CategoryId, string | undefined>();
+        for (const dish of dishes) {
+          let category = byName.get(dish.category.toLowerCase());
+          if (!category) {
+            category = { id: ids.newId() as CategoryId, name: dish.category, sortKey: (lastCategoryKey = keyBetween(lastCategoryKey)) };
+            byName.set(dish.category.toLowerCase(), category);
+            changes.push({ op: "put", table: "categories", record: category });
+          }
+          if (!lastItemKey.has(category.id)) lastItemKey.set(category.id, sortByOrder(itemsIn(menu, category.id)).at(-1)?.sortKey);
+          const sortKey = keyBetween(lastItemKey.get(category.id));
+          lastItemKey.set(category.id, sortKey);
+          const pricing = { kind: "fixed", price: dish.price } as const;
+          const record: MenuItem = {
+            id: ids.newId() as ItemId,
+            name: dish.name,
+            categoryId: category.id,
+            diet: dish.diet,
+            sortKey,
+            prices: Object.fromEntries(profiles.map((p) => [p.id, pricing])),
+          };
+          changes.push({ op: "put", table: "items", record });
+        }
+        return { changes, result: undefined };
+      }),
 
     removeProfile: (id) =>
       run<Result<Undo, "lastProfile">>(`removeProfile:${id}`, (menu) => {

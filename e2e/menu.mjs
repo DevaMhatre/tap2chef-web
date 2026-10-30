@@ -3,6 +3,7 @@
 
 
 import { chromium } from "playwright";
+import { skipSetup } from "./skipSetup.mjs";
 
 const [name, width, height, scheme] = process.argv.slice(2);
 const OUT = new URL("./shots/", import.meta.url).pathname;
@@ -28,7 +29,7 @@ const shot = async (label) => {
   await page.screenshot({ path: `${OUT}${name}-${String(++n).padStart(2, "0")}-${label}.png` });
 };
 
-await page.goto(`${BASE}/tables`);
+await skipSetup(page, `${BASE}/tables`);
 await page.waitForSelector("text=How many tables?");
 
 // Seed a menu straight into IndexedDB, shaped as the app stores it.

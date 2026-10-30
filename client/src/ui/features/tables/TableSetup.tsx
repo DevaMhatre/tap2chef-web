@@ -1,11 +1,10 @@
 import { useState } from "react";
 import { MdAdd, MdRemove, MdTableRestaurant } from "react-icons/md";
 import { TABLE_COUNT } from "../../../domain/tables";
-import type { Tables } from "../../../usecases/useTables";
 import { Button } from "../../design-system/Button";
 import { haptic } from "../../design-system/haptic";
 
-type Props = Extract<Tables, { state: "empty" }>;
+type Props = { suggestedCount: number; setUp(count: number): Promise<unknown> };
 
 const stepClass =
   "flex min-h-14 min-w-14 items-center justify-center text-2xl text-primary transition-transform active:scale-90 disabled:text-line";
@@ -52,8 +51,9 @@ export function TableSetup({ suggestedCount, setUp }: Props) {
       <Button
         className="w-full"
         onClick={async () => {
-          const result = await setUp(count);
-          if (result.ok) haptic();
+          // The stepper keeps the count within bounds, so this always sets up.
+          await setUp(count);
+          haptic();
         }}
       >
         Set Up {count} {count === 1 ? "Table" : "Tables"}

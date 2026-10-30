@@ -1,5 +1,6 @@
 // In-memory ports for use-case tests. Not imported by the app.
 import { applyChanges } from "./applyChanges";
+import type { SetupProgress, ShopDetails } from "../domain/setup";
 import type { DeviceSession } from "../domain/signIn";
 import { err, ok } from "../domain/result";
 import type {
@@ -23,6 +24,9 @@ import type {
   OrderChange,
   OrderRepository,
   OrderSnapshot,
+  LocalSetup,
+  SetupStore,
+  ShopRepository,
 } from "./ports";
 
 export function fakeIds(): IdGenerator {
@@ -258,4 +262,55 @@ export function fakeSyncService() {
     listeners.forEach((l) => l(n));
   }
   return { service, state, setWaiting };
+}
+
+/** The shop's details; `writes` records every save. */
+export function fakeShopRepository(initial: ShopDetails | null = null) {
+  let details = initial;
+  const listeners = new Set<(d: ShopDetails | null) => void>();
+  const writes: ShopDetails[] = [];
+  const repository: ShopRepository = {
+    subscribe(onChange) {
+      listeners.add(onChange);
+      queueMicrotask(() => onChange(details));
+      return () => listeners.delete(onChange);
+    },
+    async write(next) {
+      writes.push(next);
+      details = next;
+      listeners.forEach((l) => l(details));
+    },
+  };
+  return { repository, writes };
+}
+
+/** This phone's setup memory. `empty` says whether the phone holds nothing yet. */
+export function fakeSetupStore({ progress = null as SetupProgress | null, empty = true } = {}) {
+  let local: LocalSetup = { progress, cardDismissed: false };
+  const listeners = new Set<(s: LocalSetup) => void>();
+  const set = (next: LocalSetup) => {
+    local = next;
+    listeners.forEach((l) => l(local));
+  };
+  const state = { empty };
+  const store: SetupStore = {
+    subscribe(onChange) {
+      listeners.add(onChange);
+      queueMicrotask(() => onChange(local));
+      return () => listeners.delete(onChange);
+    },
+    async save(next) {
+      set({ ...local, progress: next });
+    },
+    async begin(next) {
+      if (!local.progress) set({ ...local, progress: next });
+    },
+    async isEmptyDevice() {
+      return state.empty;
+    },
+    async dismissCard() {
+      set({ ...local, cardDismissed: true });
+    },
+  };
+  return { store, state, current: () => local };
 }

@@ -6,11 +6,14 @@ import { dexieDayRepository } from "./infrastructure/db/dexieDayRepository";
 import { dexieDrawerRepository } from "./infrastructure/db/dexieDrawerRepository";
 import { dexieExpenseRepository } from "./infrastructure/db/dexieExpenseRepository";
 import { dexieOrderRepository } from "./infrastructure/db/dexieOrderRepository";
+import { dexieSetupStore } from "./infrastructure/db/dexieSetupStore";
+import { dexieShopRepository } from "./infrastructure/db/dexieShopRepository";
 import { httpAccountService } from "./infrastructure/account/httpAccountService";
 import { newId } from "./infrastructure/id";
 import { browserNetworkStatus, browserVisibility } from "./infrastructure/network";
 import { httpSync } from "./infrastructure/sync/httpSync";
 import AppShell from "./ui/AppShell";
+import { SetupGate } from "./ui/features/setup/SetupGate";
 import { CompletionProvider } from "./ui/design-system/Completion";
 import { UndoToastProvider } from "./ui/design-system/UndoToast";
 import ExpensesPage from "./ui/pages/ExpensesPage";
@@ -33,6 +36,8 @@ const ports: Ports = {
   days: dexieDayRepository,
   drawer: dexieDrawerRepository,
   account: httpAccountService,
+  shop: dexieShopRepository,
+  setup: dexieSetupStore,
   ids: { newId },
   clock: { now: Date.now },
 };
@@ -43,6 +48,7 @@ export default function App() {
       <UndoToastProvider>
         <CompletionProvider>
         <BrowserRouter>
+          <SetupGate>
           <Routes>
             <Route element={<AppShell />}>
               <Route index element={<Navigate to="/tables" replace />} />
@@ -57,6 +63,7 @@ export default function App() {
               <Route path="*" element={<Navigate to="/tables" replace />} />
             </Route>
           </Routes>
+          </SetupGate>
         </BrowserRouter>
         </CompletionProvider>
       </UndoToastProvider>

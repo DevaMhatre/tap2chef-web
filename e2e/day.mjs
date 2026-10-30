@@ -1,4 +1,5 @@
 import { chromium } from "playwright";
+import { skipSetup } from "./skipSetup.mjs";
 const S = new URL(".", import.meta.url).pathname;
 const BASE = "http://localhost:5199";
 const sizes = [[360, 740, "phone"], [820, 1180, "tablet"], [1440, 900, "desktop"]];
@@ -19,7 +20,7 @@ for (const scheme of ["light", "dark"]) {
     const tag = `${name}-${scheme}`;
     const shot = async (n) => { await page.waitForTimeout(500); return page.screenshot({ path: `${S}/shots/${tag}-${n}.png` }); };
 
-    await page.goto(`${BASE}/expenses`);
+    await skipSetup(page, `${BASE}/expenses`);
     await page.getByText("Nothing spent today").waitFor();
     await shot("1-expenses-empty");
     check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), `${tag}: no horizontal scroll (empty)`);
@@ -197,7 +198,7 @@ for (const scheme of ["light", "dark"]) {
 {
   const ctx = await browser.newContext({ viewport: { width: 360, height: 740 } });
   const page = await ctx.newPage();
-  await page.goto(`${BASE}/today`);
+  await skipSetup(page, `${BASE}/today`);
   await page.getByText("Nothing yet today").waitFor();
   await page.getByRole("button", { name: /^Started with/ }).click();
   await page.getByLabel("Cash the drawer started with").fill("1500");

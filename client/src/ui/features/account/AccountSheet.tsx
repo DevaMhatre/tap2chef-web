@@ -127,7 +127,8 @@ function EmailText({ email }: { email: string }) {
   );
 }
 
-function EmailStep({ signIn }: { signIn: SignIn }) {
+/** The email, then the code: shared by this sheet and the setup's first screen. */
+export function EmailStep({ signIn, intro = true }: { signIn: SignIn; intro?: boolean }) {
   return (
     <form
       noValidate
@@ -137,9 +138,11 @@ function EmailStep({ signIn }: { signIn: SignIn }) {
         void signIn.sendCode();
       }}
     >
-      <p className="px-1 text-[15px] text-muted">
-        Sign in with your email, and your menu, bills and expenses are kept safe online, even if this phone is lost.
-      </p>
+      {intro && (
+        <p className="px-1 text-[15px] text-muted">
+          Sign in with your email, and your menu, bills and expenses are kept safe online, even if this phone is lost.
+        </p>
+      )}
       <TextField
         label="Email"
         type="email"
@@ -161,7 +164,7 @@ function EmailStep({ signIn }: { signIn: SignIn }) {
   );
 }
 
-function CodeStep({ signIn, email, resendAt }: { signIn: SignIn; email: string; resendAt: number }) {
+export function CodeStep({ signIn, email, resendAt }: { signIn: SignIn; email: string; resendAt: number }) {
   const now = useNow(1000);
   const wait = Math.max(0, Math.ceil((resendAt - now) / 1000));
 

@@ -2,15 +2,16 @@
 import type { ReactNode } from "react";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { fakeAccountService, fakeClock } from "./fakes";
+import { fakeAccountService, fakeClock, fakeShopRepository } from "./fakes";
 import type { Ports } from "./ports";
 import { PortsProvider } from "./PortsProvider";
 import { useDeviceSession, useSignIn } from "./useSignIn";
 
-function setup(options: Parameters<typeof fakeAccountService>[0] = {}) {
+function setup(options: Parameters<typeof fakeAccountService>[0] = {}, shopName?: string) {
   const server = fakeAccountService(options);
   const time = fakeClock(1_000_000);
-  const ports = { account: server.service, clock: time.clock } as Partial<Ports> as Ports;
+  const shop = fakeShopRepository(shopName ? { name: shopName, service: "both" } : null);
+  const ports = { account: server.service, shop: shop.repository, clock: time.clock } as Partial<Ports> as Ports;
   const wrapper = ({ children }: { children: ReactNode }) => <PortsProvider ports={ports}>{children}</PortsProvider>;
   const hook = renderHook(() => ({ signIn: useSignIn(), session: useDeviceSession() }), { wrapper });
   return { server, time, ...hook };
@@ -50,6 +51,15 @@ describe("useSignIn", () => {
     await toCode(result);
     act(() => result.current.signIn.typeCode("123456"));
     await waitFor(() => expect(result.current.signIn.flow.step).toBe("done"));
+  });
+
+  it("signs up a restaurant set up before signing in under the name it already has", async () => {
+    const { result, server } = setup({}, "Chai Point");
+    await waitFor(() => expect(result.current.session).toBeNull());
+    await toCode(result, "new@example.com");
+    act(() => result.current.signIn.typeCode("123456"));
+    await waitFor(() => expect(result.current.signIn.flow.step).toBe("done"));
+    expect(server.calls.signIn).toEqual([{ email: "new@example.com", code: "123456", name: "Chai Point" }]);
   });
 
   it("refuses a bad email without asking the server", async () => {

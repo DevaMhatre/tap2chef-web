@@ -27,12 +27,13 @@ export type SignIn = {
   resend(): Promise<void>;
   changeEmail(): void;
   typeName(text: string): void;
-  finish(): Promise<void>;
+  /** Names the new restaurant and signs in; `name` stands in for what was typed here. */
+  finish(name?: string): Promise<void>;
 };
 
 /** Email → code → (a new owner) the restaurant's name. */
 export function useSignIn(): SignIn {
-  const { account, clock } = usePorts();
+  const { account, shop, clock } = usePorts();
   const [flow, setFlow] = useState<SignInStep>({ step: "email" });
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
@@ -44,6 +45,11 @@ export function useSignIn(): SignIn {
   const request = useRef<AbortController | null>(null);
 
   useEffect(() => () => request.current?.abort(), []);
+
+  // A restaurant set up before signing in already has its name: a new
+  // owner isn't asked it twice.
+  const knownName = useRef<string>(undefined);
+  useEffect(() => shop.subscribe((details) => (knownName.current = details?.name)), [shop]);
 
   /** Runs one request at a time; drops its answer if the sheet went away meanwhile. */
   async function once(task: (signal: AbortSignal) => Promise<void>) {
@@ -78,7 +84,7 @@ export function useSignIn(): SignIn {
 
   const verify = (to: Email, digits: string, restaurantName?: string) =>
     once(async (signal) => {
-      const result = await account.signIn(to, digits, restaurantName, signal);
+      const result = await account.signIn(to, digits, restaurantName ?? knownName.current, signal);
       if (signal.aborted) return;
       if (!result.ok) {
         setProblem(result.error);
@@ -125,9 +131,9 @@ export function useSignIn(): SignIn {
       setName(text);
       setProblem(undefined);
     },
-    async finish() {
+    async finish(typed = name) {
       if (flow.step !== "name") return;
-      const read = readRestaurantName(name);
+      const read = readRestaurantName(typed);
       if (!read.ok) return setProblem(read.error === "empty" ? "noName" : "nameTooLong");
       await verify(flow.email, code, read.value);
     },

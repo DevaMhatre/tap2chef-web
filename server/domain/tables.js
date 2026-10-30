@@ -15,6 +15,7 @@ export const SHOP_TABLES = [
   "outOfStock",
   "payments",
   "drawerEntries",
+  "shopDetails",
 ];
 
 export const WRITE_PERMISSION = {
@@ -28,6 +29,8 @@ export const WRITE_PERMISSION = {
   expenses: "expenses.note",
   diningTables: "tables.edit",
   drawerEntries: "day.view",
+  /** The restaurant's name and how its customers order. */
+  shopDetails: "shops.manage",
 };
 
 export const isShopTable = (table) => SHOP_TABLES.includes(table);

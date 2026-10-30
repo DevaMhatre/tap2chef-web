@@ -41,6 +41,7 @@ export const SHOP_TABLES = [
   "outOfStock",
   "payments",
   "drawerEntries",
+  "shopDetails",
 ] as const;
 
 export const SYNCED_TABLES = [...BRAND_TABLES, ...SHOP_TABLES] as const;
@@ -128,7 +129,10 @@ db.version(7)
     await meta.bulkPut([{ key: "accountId", value: accountId }, { key: "shopId", value: shopId }]);
     await meta.delete("tenantId");
 
-    for (const table of SYNCED_TABLES) {
+    // The tables as they were at version 7, never today's list: a table
+    // added later doesn't exist yet in this upgrade.
+    const v7Tables = ["menuProfiles", "categories", "items", "orders", "orderItems", "expenses", "diningTables", "outOfStock", "payments", "drawerEntries"] as const;
+    for (const table of v7Tables) {
       const shop = isShopTable(table);
       await tx.table<StoredRecord, string>(table).toCollection().modify((row) => {
         delete row.tenantId;
@@ -149,9 +153,16 @@ db.version(8)
     const account = await meta.get("accountId");
     if (!account) return;
     await meta.put({ key: "brandId", value: account.value });
-    for (const table of BRAND_TABLES) {
+    // The menu's tables as they were at version 8 (see version 7).
+    for (const table of ["menuProfiles", "categories", "items"] as const) {
       await tx.table<StoredRecord, string>(table).toCollection().modify((row) => {
         row.brandId = account.value;
       });
     }
   });
+
+// Step 10c: the restaurant's name and how its customers order, one record
+// per shop, whose id is the shop's.
+db.version(9).stores({
+  shopDetails: "id, updatedAt",
+});

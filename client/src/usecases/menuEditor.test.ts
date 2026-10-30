@@ -217,3 +217,30 @@ describe("failures", () => {
     expect(fake.writes).toHaveLength(0);
   });
 });
+
+describe("addDishes (the setup's starter list)", () => {
+  const dish = (name: string, category: string, price = 10000) => ({ name, category, diet: "veg" as const, price: price as never });
+
+  it("makes the one price list, the categories in order, and the dishes in typing order", async () => {
+    const { fake, menu } = await setup({});
+    await menu.addDishes([dish("Masala Dosa", "Dosa"), dish("Filter Coffee", "Drinks", 3000), dish("Plain Dosa", "Dosa")], "Takeaway");
+    const now = fake.current();
+    expect(now.profiles.map((p) => p.name)).toEqual(["Takeaway"]);
+    expect(sortByOrder(now.categories).map((c) => c.name)).toEqual(["Dosa", "Drinks"]);
+    const dosa = now.categories.find((c) => c.name === "Dosa")!;
+    expect(itemsIn(now, dosa.id)).toEqual(["Masala Dosa", "Plain Dosa"]);
+    expect(now.items.find((i) => i.name === "Filter Coffee")!.prices).toEqual({ [now.profiles[0]!.id]: { kind: "fixed", price: 3000 } });
+    expect(fake.writes).toHaveLength(1);
+  });
+
+  it("prices each dish on every list, after what a category already holds", async () => {
+    const existing: MenuItem = { id: "i0" as ItemId, name: "Samosa", categoryId: starters.id, diet: "veg", sortKey: "5", prices: {} };
+    const { fake, menu } = await setup({ profiles: [dineIn, takeaway], categories: [starters, mains], items: [existing] });
+    await menu.addDishes([dish("Paneer Tikka", "starters")], "Dine-In");
+    const now = fake.current();
+    expect(now.profiles).toHaveLength(2);
+    expect(now.categories).toHaveLength(2);
+    expect(itemsIn(now, starters.id)).toEqual(["Samosa", "Paneer Tikka"]);
+    expect(Object.keys(now.items.find((i) => i.name === "Paneer Tikka")!.prices).sort()).toEqual([dineIn.id, takeaway.id]);
+  });
+});

@@ -125,6 +125,10 @@ wrong and how we now avoid it**.
 - *What happened:* the 8a upgrade (tenant → account / shop) passed unit tests and a real upgrade of the live build's data. A second check, with an old tab left open while a new tab upgraded, showed the old tab still writing, now with a fresh `tenantId` and no `accountId`. Deployed code can't be changed, so nothing in the migration could prevent it.
 - *Apply:* test every Dexie version bump in real Chrome twice: data written by the live build, upgraded; and a live-build tab left open during the upgrade, then writing. Whatever the old code can still write must be tolerated downstream (here: sync push stamps the scope).
 
+**7. An upgrade names the tables of its own version** (2026-10-30)
+- *What happened:* the v7 upgrade looped over `SYNCED_TABLES`. Adding `shopDetails` (v9) made it touch a table that doesn't exist at v7, and every upgrade from v6 failed. The unit test for the old upgrade caught it.
+- *Apply:* a Dexie upgrade function lists its tables literally, as they were at that version; never a shared constant that grows. Keep the old upgrades' tests.
+
 ## UI mechanics
 
 **1. Anything that must outlive a screen lives above all screens** (2026-10-29)
@@ -142,6 +146,10 @@ wrong and how we now avoid it**.
 **3. A sheet whose own action changes what decides its content** (2026-10-29)
 - *What happened:* the account sheet chose "sign in" or "account" from the session. Signing in set the session, the parent swapped sheets, and the "Signed in" moment never showed. Same family as UI 1, met again in a new shape.
 - *Apply:* a sheet decides what it shows when it opens and keeps it until it closes. Ask of every sheet: does its own commit change the state that picks its content?
+
+**5. A screen offers only what can work now** (2026-10-30)
+- *What happened:* offline, the setup's account screen kept "Send code" as the filled button and put the way that works ("set up now") in plain text below. Seen in the offline screenshot.
+- *Apply:* when the state changes what can work (offline, signed out), the filled button changes with it, and controls that can't work wait out of sight.
 
 **4. The browser validates before we do** (2026-10-29)
 - *What happened:* `type="email"` made the browser stop the form with its own bubble, so our message never showed.
@@ -191,5 +199,6 @@ wrong and how we now avoid it**.
   the jsdom tests won't start.
 - zsh doesn't split `$var` into words: use `${=args}` in loops that pass
   arguments.
+- Playwright matches a role's name as a substring: "Veg" also finds "Non-veg", "Add Dishes" finds "I'll add dishes later". Use `exact: true`. `.first()` on text can pick an element hidden at this width (the desktop sidebar on a phone).
 - A full page reload with the network off fails against the dev server. Test
   offline by navigating inside the app, not with `page.goto`.

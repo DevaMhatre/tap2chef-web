@@ -1,7 +1,8 @@
 // A storage upgrade meets the live build twice (LEARNINGS, Data 6): what the
 // live build wrote is upgraded and still shows, and a live-build tab left open
 // during the upgrade keeps working. Written for the Dexie v8 bump (step 10a,
-// the menu moves into a brand); adjust the checks at the end for the next one.
+// the menu moves into a brand) and v9 (10c, the setup: a phone with records
+// never sees it); adjust the checks for the next one.
 //
 // Build both first: the live one from a worktree of the deployed commit
 // (`git worktree add <dir> <commit>`, link client/node_modules, `npx vite build`)
@@ -104,7 +105,8 @@ await next.waitForTimeout(500);
 check(await next.getByText("Samosa").isVisible(), "new build: the live build's dish still shows");
 const after = await dump(next);
 const accountId = after.meta.find((m) => m.key === "accountId").value;
-check(after.version === 80, `upgraded to version 8 (${after.version / 10})`);
+check(after.version === 90, `upgraded to version 9 (${after.version / 10})`);
+check(after.meta.find((m) => m.key === "setup")?.value === JSON.stringify({ step: "done" }), "a phone with records is never set up");
 check(after.meta.find((m) => m.key === "brandId")?.value === accountId, "the device's brand is the account's first brand");
 for (const table of ["menuProfiles", "categories", "items"]) {
   check(after[table].length > 0 && after[table].every((r) => r.brandId === accountId), `every ${table} row is in the brand`);
@@ -112,6 +114,10 @@ for (const table of ["menuProfiles", "categories", "items"]) {
 check(after.diningTables.length === 6 && after.diningTables.every((r) => !("brandId" in r) && r.shopId), "shop records stay the shop's, without a brand");
 check(after.outbox.length === before.outbox.length, `the upgrade queued nothing to send (${before.outbox.length} → ${after.outbox.length})`);
 await next.screenshot({ path: `${S}upgrade-new-menu.png` });
+await next.goto(`${BASE}/tables`);
+await next.getByText("Keep a copy of your restaurant safe").waitFor();
+check(true, "the floor offers to keep a copy safe, once");
+await next.screenshot({ path: `${S}upgrade-new-card.png` });
 
 // --- The live tab, left open, keeps working; this build sees what it writes.
 await addItem(live, "Chai", "15");

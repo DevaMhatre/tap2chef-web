@@ -3,6 +3,7 @@
 // Usage: node sync.mjs <path to api.log>
 import { readFileSync } from "node:fs";
 import { chromium } from "playwright";
+import { skipSetup } from "./skipSetup.mjs";
 const S = new URL(".", import.meta.url).pathname;
 const BASE = "http://localhost:5199";
 const LOG = process.argv[2];
@@ -47,7 +48,7 @@ async function arrives(page, locator) {
 
 // --- The waiter's phone: a menu, six tables, then signs in.
 const phone = await device(360, 740, "light", "phone");
-await phone.page.goto(`${BASE}/tables`);
+await skipSetup(phone.page, `${BASE}/tables`);
 await phone.page.waitForSelector("text=How many tables?");
 await phone.page.evaluate(async () => {
   const open = indexedDB.open("tap2chef");
@@ -72,7 +73,7 @@ await phone.shot("1-signed-in");
 
 // --- The counter tablet joins the same restaurant and gets everything.
 const tablet = await device(820, 1180, "dark", "tablet");
-await tablet.page.goto(`${BASE}/tables`);
+await skipSetup(tablet.page, `${BASE}/tables`);
 await tablet.page.waitForSelector("text=How many tables?");
 await signIn(tablet);
 check(await arrives(tablet.page, tablet.page.locator("a[href^='/tables/']").nth(5)) !== undefined, "tablet: the phone's six tables arrive");

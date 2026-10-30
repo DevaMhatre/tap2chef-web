@@ -5,6 +5,7 @@ import type { Category, ItemOverride, MenuItem, MenuProfile } from "../domain/me
 import type { DrawerEntry } from "../domain/drawer";
 import type { Expense } from "../domain/expense";
 import type { BusinessDate, Order, OrderLine, OutOfStock, Payment } from "../domain/order";
+import type { SetupProgress, ShopDetails } from "../domain/setup";
 import type { DeviceSession, Email } from "../domain/signIn";
 import type { Result } from "../domain/result";
 import type { DiningTable } from "../domain/tables";
@@ -139,6 +140,31 @@ export interface AccountService {
   ): Promise<Result<SignInOutcome, SignInError>>;
 }
 
+/** The restaurant as its owner described it, on every phone of the shop. */
+export interface ShopRepository {
+  /** Emits now (null until the setup's answers are in), then after every change. */
+  subscribe(onChange: (details: ShopDetails | null) => void): () => void;
+  write(details: ShopDetails): Promise<void>;
+}
+
+/** What only this phone remembers about its setup. */
+export type LocalSetup = {
+  /** Null until the setup was first looked at on this phone. */
+  progress: SetupProgress | null;
+  /** The one-time "keep a copy safe" card was put away. */
+  cardDismissed: boolean;
+};
+
+export interface SetupStore {
+  subscribe(onChange: (setup: LocalSetup) => void): () => void;
+  save(progress: SetupProgress): Promise<void>;
+  /** Saves only if nothing is saved yet, so two tabs opening together agree. */
+  begin(progress: SetupProgress): Promise<void>;
+  /** Whether this phone holds nothing yet: no records, never signed in. */
+  isEmptyDevice(): Promise<boolean>;
+  dismissCard(): Promise<void>;
+}
+
 export interface Clock {
   now(): number;
 }
@@ -157,6 +183,8 @@ export interface Ports {
   days: DayRepository;
   drawer: DrawerRepository;
   account: AccountService;
+  shop: ShopRepository;
+  setup: SetupStore;
   ids: IdGenerator;
   clock: Clock;
 }

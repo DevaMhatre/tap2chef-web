@@ -2,6 +2,7 @@
 // and the dev server on :5199. Usage: node account.mjs <path to api.log>
 import { readFileSync } from "node:fs";
 import { chromium } from "playwright";
+import { skipSetup } from "./skipSetup.mjs";
 const S = new URL(".", import.meta.url).pathname;
 const BASE = "http://localhost:5199";
 const LOG = process.argv[2];
@@ -36,7 +37,7 @@ for (const scheme of ["light", "dark"]) {
     const shot = async (n) => { await page.waitForTimeout(500); return page.screenshot({ path: `${S}/shots/account-${tag}-${n}.png` }); };
     const email = `owner-${tag}-${RUN}@example.com`;
 
-    await page.goto(`${BASE}/expenses`);
+    await skipSetup(page, `${BASE}/expenses`);
     await page.getByText("Nothing spent today").waitFor();
     // Something noted before signing in must stay this device's, in its account.
     await page.getByRole("button", { name: "Expense", exact: true }).first().click();
@@ -100,7 +101,7 @@ for (const scheme of ["light", "dark"]) {
 // A second phone signing in to the same restaurant: no name asked, its records join the account.
 {
   const { ctx, page, errors } = await open(360, 740, "light");
-  await page.goto(`${BASE}/expenses`);
+  await skipSetup(page, `${BASE}/expenses`);
   await page.getByText("Nothing spent today").waitFor();
   await page.getByRole("button", { name: /^Saved / }).click();
   await page.getByLabel("Email").fill(firstEmail);
@@ -118,7 +119,7 @@ for (const scheme of ["light", "dark"]) {
 // Offline: the sheet says so, and nothing else stops.
 {
   const { ctx, page } = await open(360, 740, "dark");
-  await page.goto(`${BASE}/expenses`);
+  await skipSetup(page, `${BASE}/expenses`);
   await page.getByText("Nothing spent today").waitFor();
   await ctx.setOffline(true);
   await page.getByRole("button", { name: /^Saved / }).click();
