@@ -129,6 +129,10 @@ wrong and how we now avoid it**.
 - *What happened:* the v7 upgrade looped over `SYNCED_TABLES`. Adding `shopDetails` (v9) made it touch a table that doesn't exist at v7, and every upgrade from v6 failed. The unit test for the old upgrade caught it.
 - *Apply:* a Dexie upgrade function lists its tables literally, as they were at that version; never a shared constant that grows. Keep the old upgrades' tests.
 
+**8. Upgrade from what is live, not from the last commit** (2026-10-31)
+- *What happened:* with commits and pushes held, the live site was three Dexie versions behind the last commit (v7 live, v9 committed, v10 built). Testing the upgrade from the last commit would have skipped the path every real phone takes.
+- *Apply:* read `/.deployed`, find the `site` commit's main commit (`git fetch`, "built app from main …"), build that, and run `e2e/upgrade.mjs` from it.
+
 ## UI mechanics
 
 **1. Anything that must outlive a screen lives above all screens** (2026-10-29)
@@ -158,6 +162,16 @@ wrong and how we now avoid it**.
 **4. The browser validates before we do** (2026-10-29)
 - *What happened:* `type="email"` made the browser stop the form with its own bubble, so our message never showed.
 - *Apply:* forms with our own validation get `noValidate`; the browser script checks that our words appear.
+
+## Security and permissions
+
+**2. Records from other phones can break a rule this phone keeps** (2026-11-01)
+- *What happened:* `amountDue` threw on a negative amount. One phone can't make a discount larger than the bill, but a discount given on one phone and a dish cancelled on another meet after sync, and every screen showing that bill went blank. Found by a test that pushed a record no screen could make.
+- *Apply:* anything computed from synced records must hold for any combination two phones could produce: clamp, show, never throw. A browser test that writes a "can't happen" record straight into IndexedDB is the cheap way to find these.
+
+**1. A rule written as "enforced on the server" needs a server test that proves it** (2026-11-01)
+- *What happened:* 10g wrote "discounts are the owner's alone, enforced on the server" into PLAN. The server only checked who may write a table (`orders`), never what the record says, so any phone that can take orders could push a discount. Found while adding the same rule for pay later.
+- *Apply:* a permission that depends on a record's content (a discount, a bill on a name) is checked on the server against the stored record, so carrying an agreed value is allowed and giving a new one isn't. Every such line in PLAN has a server test, and the test fails with the check removed.
 
 ## Process and testing
 
@@ -204,5 +218,6 @@ wrong and how we now avoid it**.
 - zsh doesn't split `$var` into words: use `${=args}` in loops that pass
   arguments.
 - Playwright matches a role's name as a substring: "Veg" also finds "Non-veg", "Add Dishes" finds "I'll add dishes later". Use `exact: true`. `.first()` on text can pick an element hidden at this width (the desktop sidebar on a phone).
+- A regex role name matches any button whose label contains it: `/in order/` meant for the cart bar also hit "Half ₹180, 2 in order" and added a dish. Match the exact control (`/View order/`), and check a total after every scripted run of taps.
 - A full page reload with the network off fails against the dev server. Test
   offline by navigating inside the app, not with `page.goto`.
