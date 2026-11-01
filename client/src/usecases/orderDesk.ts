@@ -33,6 +33,7 @@ import {
   type RemoveError,
   type VoidReason,
 } from "../domain/order";
+import type { KotPrint } from "../domain/kot";
 import { err, ok, type Result } from "../domain/result";
 import type { Discount, PaymentMethod, Tender } from "../domain/settlement";
 import { isTableCount, nextTableName, numberedTables, TABLE_NAME_MAX, type DiningTable, type TableId } from "../domain/tables";
@@ -97,6 +98,10 @@ export type OrderCommands = {
   ): Promise<Result<{ settled: boolean; undo: Undo }, PaymentError | "missing">>;
   /** Settles a bill with nothing left to pay: ₹0 dishes, or on the house. */
   closeBill(orderId: OrderId, discount?: Discount): Promise<Result<Undo, CloseError>>;
+  /** A KOT came out of the printer. The same one again changes nothing. */
+  notePrinted(print: KotPrint): Promise<void>;
+  /** A KOT printed again (lost or torn); counted, as a reprint is worth a look. */
+  noteReprint(printId: string): Promise<void>;
   /** "It was UPI, not cash." Same amount, other method, and it shows. */
   correctPayment(paymentId: PaymentId, method: PaymentMethod): Promise<Result<void, "unchanged" | "removed" | "later" | "missing">>;
   /** Takes a wrong payment off the bill; it stays listed. Undo puts it back. */
@@ -373,6 +378,18 @@ export function createOrderDesk(repository: OrderRepository, ids: IdGenerator, c
         const closed = closeBill(order, s.lines, s.payments, discount, clock.now());
         if (!closed.ok) return nothing(closed);
         return { changes: [put({ table: "orders", record: closed.value })], result: ok(takeBack(order, closed.value, null)) };
+      }),
+
+    notePrinted: (print) =>
+      run<void>(`notePrinted:${print.id}`, (s) =>
+        s.kotPrints.some((p) => p.id === print.id) ? nothing(undefined) : { changes: [put({ table: "kotPrints", record: print })], result: undefined },
+      ),
+
+    noteReprint: (printId) =>
+      run<void>(null, (s) => {
+        const print = s.kotPrints.find((p) => p.id === printId);
+        if (!print) return nothing(undefined);
+        return { changes: [put({ table: "kotPrints", record: { ...print, reprints: (print.reprints ?? 0) + 1 } })], result: undefined };
       }),
 
     correctPayment: (paymentId, method) =>

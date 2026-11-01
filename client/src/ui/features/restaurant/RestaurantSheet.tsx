@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MdAdd } from "react-icons/md";
+import { MdAdd, MdPrint } from "react-icons/md";
 import type { Phone } from "../../../domain/phones";
 import { usePhones } from "../../../usecases/usePhones";
 import { useRestaurantDetails, type RestaurantDetailsProblem } from "../../../usecases/useRestaurantDetails";
@@ -7,6 +7,7 @@ import { Button } from "../../design-system/Button";
 import { TextField } from "../../design-system/Field";
 import { hapticSuccess } from "../../design-system/haptic";
 import { ListNote, ListRow, ListSection } from "../../design-system/GroupedList";
+import { useKitchenPrinter } from "../../../usecases/KitchenPrintingProvider";
 import { Sheet } from "../../design-system/Sheet";
 import { formatLastSeen } from "../../format";
 import { useNow } from "../../useNow";
@@ -85,6 +86,7 @@ function Editor({ open, onClose, onAddPhone, onRemovePhone }: Props) {
             {!ready.canEdit && <p className="mt-1.5 px-1 text-[13px] text-muted">Only the owner&rsquo;s phone can change these.</p>}
           </div>
           {open && <PhonesSection onAdd={onAddPhone} onRemove={onRemovePhone} />}
+          <KitchenPrinterSection />
         </div>
       )}
     </Sheet>
@@ -124,6 +126,59 @@ function PhonesSection({ onAdd, onRemove }: { onAdd: () => void; onRemove: (phon
         <ListRow leading={<MdAdd aria-hidden className="text-xl text-primary" />} className="font-semibold text-primary" onClick={onAdd}>
           Add a Phone
         </ListRow>
+      )}
+    </ListSection>
+  );
+}
+
+// Which phone prints the KOTs: the one beside the printer, usually the
+// counter's. Every phone's Send prints there by itself.
+function KitchenPrinterSection() {
+  const printer = useKitchenPrinter();
+  const [problem, setProblem] = useState<string>();
+  const { state } = printer;
+  if (state.kind === "unsupported") {
+    return (
+      <ListSection header="Kitchen printer">
+        <ListNote>This phone&rsquo;s browser can&rsquo;t reach a Bluetooth printer. Use Chrome on an Android phone.</ListNote>
+      </ListSection>
+    );
+  }
+  async function start() {
+    setProblem(undefined);
+    const result = await printer.connect();
+    if (!result.ok && result.error !== "cancelled") setProblem("Couldn't reach the printer. Is it on, and close to this phone?");
+    else if (result.ok) hapticSuccess();
+  }
+  return (
+    <ListSection
+      header="Kitchen printer"
+      footer={problem ?? (state.kind === "none" ? "Turn it on for the phone beside the printer. Every phone's KOTs will print there by themselves." : undefined)}
+    >
+      {state.kind === "none" ? (
+        <ListRow leading={<MdPrint aria-hidden className="text-xl text-primary" />} className="font-semibold text-primary" disabled={!printer.loaded} onClick={start}>
+          Print KOTs from this phone
+        </ListRow>
+      ) : (
+        <>
+          <div className="flex min-h-14 items-center gap-3 px-4 py-2">
+            <MdPrint aria-hidden className={`text-xl ${state.kind === "ready" ? "text-success" : "text-warning"}`} />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[17px]">{state.name}</span>
+              <span className="block truncate text-[13px] text-muted">
+                {state.kind === "ready" ? "Printing KOTs from this phone" : state.kind === "connecting" ? "Connecting…" : "Not connected"}
+              </span>
+            </span>
+            {state.kind === "lost" && (
+              <Button variant="plain" size="compact" className="-mr-3" onClick={start}>
+                Reconnect
+              </Button>
+            )}
+          </div>
+          <ListRow className="text-primary" onClick={() => void printer.stop()}>
+            Stop printing from this phone
+          </ListRow>
+        </>
       )}
     </ListSection>
   );

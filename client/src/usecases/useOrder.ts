@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import {
   choicesOf,
   matchesSearch,
@@ -21,6 +21,7 @@ import {
   type Order,
   type OrderId,
   type OrderLine,
+  type Round,
   type RoundId,
   billOf,
   type BillError,
@@ -28,7 +29,7 @@ import {
   type PaymentError,
   type Ticket,
 } from "../domain/order";
-import { kotForRound, kotTitle } from "../domain/kot";
+import { kotForRound, kotStatus, kotTitle, roundPrintId, type KotStatus } from "../domain/kot";
 import { sortByOrder } from "../domain/ordering";
 import { toRupeeText, type Paise } from "../domain/money";
 import { err, ok, type Result } from "../domain/result";
@@ -74,8 +75,16 @@ export type OrderScreen =
       freeTables: DiningTable[];
       chooseProfile(id: ProfileId): void;
       addDish(dish: OrderableItem, portion?: string): ReturnType<OrderCommands["addDish"]>;
-      /** Prints a round's KOT for the kitchen. */
+      /** Prints a round's KOT: on the kitchen printer if this phone holds it, else the print dialog. Again, it says REPRINT. */
       printRound(roundId: RoundId): Promise<Result<void, "failed" | "missing">>;
+      /** Where a round's slip is: printed (its KOT number), or this phone offline so it can't get there. */
+      kotStatus(round: Round): KotStatus;
+      /**
+       * Print is offered on a round the kitchen printer already printed (a
+       * reprint), or in a restaurant without one. Never before the printer
+       * has it: that slip would come out twice.
+       */
+      canPrint(round: Round): boolean;
       send(): Promise<number>;
       moveTo(tableId: TableId): ReturnType<OrderCommands["moveOrder"]>;
       /** The bill can close once nothing is waiting to go to the kitchen. */
@@ -100,7 +109,8 @@ export type OrderScreen =
 export type ReadyOrder = Extract<OrderScreen, { state: "ready" }>;
 
 export function useOrder(target: OrderTarget): OrderScreen {
-  const { ids, clock, kitchen } = usePorts();
+  const { ids, clock, kitchen, printerLink, network } = usePorts();
+  const online = useSyncExternalStore(network.subscribe, network.isOnline);
   const { commands, snapshot } = useOrderDesk();
   const menu = useMenuSnapshot();
   // Fixed when the screen opens, so a double tap on the first dish can't
@@ -205,8 +215,18 @@ export function useOrder(target: OrderTarget): OrderScreen {
     async printRound(roundId) {
       const round = ticket.rounds.find((r) => r.id === roundId);
       if (!round) return err("missing");
-      return kitchen.print(kotForRound(kotTitle(labelOf({ order }, snapshot.tables)), round));
+      const before = snapshot.kotPrints.find((p) => p.id === roundPrintId(roundId));
+      const kot = {
+        ...kotForRound(kotTitle(labelOf({ order }, snapshot.tables)), round),
+        ...(before && { number: before.number, reprint: true }),
+      };
+      const printed = await printerLink.print(kot);
+      const result = printed.ok ? printed : printed.error === "notReady" ? await kitchen.print(kot) : err("failed" as const);
+      if (result.ok && before) await commands.noteReprint(before.id);
+      return result;
     },
+    kotStatus: (round) => kotStatus(round, snapshot.kotPrints, online),
+    canPrint: (round) => snapshot.kotPrints.length === 0 || snapshot.kotPrints.some((p) => p.id === roundPrintId(round.id)),
     send: () => commands.send(order.id),
     moveTo: (tableId) => commands.moveOrder(order.id, tableId),
     stepQuantity: commands.stepQuantity,

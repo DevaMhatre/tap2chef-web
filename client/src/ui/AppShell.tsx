@@ -10,6 +10,7 @@ import {
   MdCheckCircle,
   MdCloudDone,
   MdErrorOutline,
+  MdPrint,
   MdExpandMore,
 } from "react-icons/md";
 import type { Permission } from "../domain/access";
@@ -17,6 +18,8 @@ import { useCan } from "../usecases/usePermissions";
 import { useRestaurantName, useShowsTables } from "../usecases/useRestaurant";
 import { useDeviceSession } from "../usecases/useSignIn";
 import { useRefusedChanges, useSync } from "../usecases/useSync";
+import { useKitchenPrinter } from "../usecases/KitchenPrintingProvider";
+import { Button } from "./design-system/Button";
 import { AccountSheet } from "./features/account/AccountSheet";
 import type { Phone } from "../domain/phones";
 import { useRemovePhone } from "../usecases/usePhones";
@@ -153,6 +156,7 @@ export default function AppShell() {
         {/* Bottom padding leaves room for the phone tab bar */}
         <main className="flex-1 p-4 pb-24 md:p-6 md:pb-6">
           {atService && <SafeCopyCard />}
+          <PrinterBanner />
           <Outlet />
         </main>
       </div>
@@ -166,6 +170,42 @@ export default function AppShell() {
           </NavLink>
         ))}
       </nav>
+    </div>
+  );
+}
+
+// On the printing phone only, and only when the kitchen could miss a slip:
+// the printer can't be reached (it says how many wait, and offers the one way
+// back), or this phone is offline so waiters' rounds can't reach it.
+function PrinterBanner() {
+  const printer = useKitchenPrinter();
+  if (printer.offline) {
+    return (
+      <div role="status" className="mb-4 flex items-center gap-3 rounded-2xl bg-warning/15 px-4 py-3">
+        <MdPrint aria-hidden className="shrink-0 text-xl text-warning" />
+        <span className="min-w-0 flex-1 text-[15px]">
+          <span className="font-semibold">No internet</span> · waiters&rsquo; KOTs can&rsquo;t reach this phone. This phone&rsquo;s own still print.
+        </span>
+      </div>
+    );
+  }
+  if (printer.state.kind !== "lost") return null;
+  const { waiting } = printer;
+  return (
+    <div role="status" className="mb-4 flex items-center gap-3 rounded-2xl bg-warning/15 py-2 pr-2 pl-4">
+      <MdPrint aria-hidden className="shrink-0 text-xl text-warning" />
+      <span className="min-w-0 flex-1 text-[15px]">
+        <span className="font-semibold">Printer not connected</span>
+        {waiting > 0 && ` · ${waiting} ${waiting === 1 ? "KOT" : "KOTs"} waiting`}
+      </span>
+      <Button
+        variant="plain"
+        size="compact"
+        // Straight to the chooser while the tap still counts: quiet reconnecting already ran by itself.
+        onClick={() => void printer.connect()}
+      >
+        Reconnect
+      </Button>
     </div>
   );
 }

@@ -143,7 +143,7 @@ if (!isPhone) {
   await page.getByRole("button", { name: "Print round 1 for the kitchen" }).click();
   await page.waitForTimeout(300);
   const slip = await page.evaluate(() => [...document.querySelectorAll("iframe")].at(-1)?.contentDocument?.documentElement.outerHTML ?? "");
-  check(slip.includes("HALF") && slip.includes("New order") && !slip.includes("₹"), "the KOT says HALF, has no prices");
+  check(slip.includes("HALF") && slip.includes("Table 1") && !slip.includes("₹"), "the KOT says where and HALF, and has no prices");
   const roll = await context.newPage();
   await roll.setViewportSize({ width: 220, height: 400 });
   await roll.setContent(slip);

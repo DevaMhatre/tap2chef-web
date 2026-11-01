@@ -6,7 +6,7 @@ import type { PhonePerson } from "../domain/access";
 import type { DrawerEntry } from "../domain/drawer";
 import type { Phone } from "../domain/phones";
 import type { Repayment } from "../domain/dues";
-import type { Kot } from "../domain/kot";
+import type { Kot, KotPrint } from "../domain/kot";
 import type { Expense } from "../domain/expense";
 import type { BusinessDate, Order, OrderLine, OutOfStock, Payment } from "../domain/order";
 import type { SetupProgress, ShopDetails } from "../domain/setup";
@@ -77,6 +77,8 @@ export type OrderSnapshot = {
   /** Money received against the orders above. */
   payments: Payment[];
   outOfStock: OutOfStock[];
+  /** The KOTs the kitchen got, from the window's first day: so none prints twice, and numbers never repeat. */
+  kotPrints: KotPrint[];
 };
 
 export type OrderRecord =
@@ -84,7 +86,8 @@ export type OrderRecord =
   | { table: "orders"; record: Order }
   | { table: "lines"; record: OrderLine }
   | { table: "payments"; record: Payment }
-  | { table: "outOfStock"; record: OutOfStock };
+  | { table: "outOfStock"; record: OutOfStock }
+  | { table: "kotPrints"; record: KotPrint };
 
 export type OrderChange = OrderRecord & { op: "put" | "remove" };
 
@@ -121,6 +124,10 @@ export type DaySnapshot = {
   drawer: DrawerEntry[];
   /** Money regulars brought back on this day. */
   repayments: Repayment[];
+  /** The day's KOTs, for the night's tally. */
+  kotPrints: KotPrint[];
+  /** To say where a KOT went ("Table 3"). */
+  tables: DiningTable[];
 };
 
 /** Every bill on a regular's name, and everything paid back, all time. */
@@ -208,9 +215,34 @@ export interface SetupStore {
   dismissCard(): Promise<void>;
 }
 
-/** Prints a KOT. Today the phone's print dialog; Bluetooth or USB once the printer check says which (9b). */
+/** Prints a KOT through the phone's print dialog: a reprint on a phone that isn't the printing one. */
 export interface KitchenPrinter {
   print(kot: Kot): Promise<Result<void, "failed">>;
+}
+
+/**
+ * This phone's link to the kitchen printer (Bluetooth). The phone that holds
+ * it prints every KOT, whoever sent the round.
+ */
+export type PrinterState =
+  | { kind: "none" }
+  | { kind: "unsupported" }
+  | { kind: "connecting"; name: string }
+  | { kind: "ready"; name: string }
+  /** Picked before, not reachable now: off, out of range, or the browser wants a tap to reconnect. */
+  | { kind: "lost"; name: string };
+
+export interface PrinterLink {
+  subscribe(onChange: (state: PrinterState) => void): () => void;
+  /** Pick the printer: the browser asks, so this needs a tap. `known`: what this phone found already sent, never to be printed. */
+  connect(known: readonly string[]): Promise<Result<void, "cancelled" | "unsupported" | "failed">>;
+  /** Back to the printer picked before, without a tap where the browser allows it. */
+  reconnect(): Promise<Result<void, "needsTap" | "failed">>;
+  /** This phone stops printing. */
+  forget(): Promise<void>;
+  /** What existed when this phone started printing. */
+  known(): Promise<Set<string>>;
+  print(kot: Kot): Promise<Result<void, "notReady" | "failed">>;
 }
 
 /** The two ways a web app can reach a receipt printer from a phone. */
@@ -251,6 +283,7 @@ export interface Ports {
   phones: PhonesService;
   printer: PrinterCheck;
   kitchen: KitchenPrinter;
+  printerLink: PrinterLink;
   shop: ShopRepository;
   setup: SetupStore;
   ids: IdGenerator;

@@ -35,6 +35,8 @@ import type {
   PhonesService,
   Refused,
   KitchenPrinter,
+  PrinterLink,
+  PrinterState,
 } from "./ports";
 import type { Kot } from "../domain/kot";
 
@@ -96,10 +98,12 @@ export function fakeClock(start: number) {
 }
 
 export function fakeOrderRepository(initial: Partial<OrderSnapshot> = {}) {
-  let snapshot: OrderSnapshot = { tables: [], orders: [], lines: [], payments: [], outOfStock: [], ...initial };
+  let snapshot: OrderSnapshot = { tables: [], orders: [], lines: [], payments: [], outOfStock: [], kotPrints: [], ...initial };
   const listeners = new Set<(snapshot: OrderSnapshot) => void>();
   const writes: OrderChange[][] = [];
   let gate: Promise<void> | null = null;
+  // Like Dexie's live queries: a write resolves, and screens hear of it a moment later.
+  const lag = { ms: 0 };
 
   const repository: OrderRepository = {
     subscribe(_since, onChange) {
@@ -111,13 +115,16 @@ export function fakeOrderRepository(initial: Partial<OrderSnapshot> = {}) {
       if (gate) await gate;
       writes.push([...changes]);
       snapshot = applyChanges(snapshot, changes);
-      listeners.forEach((l) => l(snapshot));
+      const now = snapshot;
+      if (lag.ms > 0) setTimeout(() => listeners.forEach((l) => l(now)), lag.ms);
+      else listeners.forEach((l) => l(now));
     },
   };
 
   return {
     repository,
     writes,
+    lag,
     current: () => snapshot,
     hold(): () => void {
       let release!: () => void;
@@ -176,7 +183,7 @@ export function fakeDayRepository(days: Record<string, Partial<DaySnapshot>> = {
   const repository: DayRepository = {
     subscribe(day, onChange) {
       asked.push(day);
-      queueMicrotask(() => onChange({ orders: [], lines: [], payments: [], expenses: [], drawer: [], repayments: [], ...days[day] }));
+      queueMicrotask(() => onChange({ orders: [], lines: [], payments: [], expenses: [], drawer: [], repayments: [], kotPrints: [], tables: [], ...days[day] }));
       return () => undefined;
     },
   };
@@ -410,4 +417,48 @@ export function fakeKitchenPrinter() {
     },
   };
   return { printer, printed };
+}
+
+/** A kitchen printer the test switches on and off, which can fail the next slip. */
+export function fakePrinterLink(initial: PrinterState = { kind: "none" }) {
+  let state = initial;
+  let known = new Set<string>();
+  const printed: Kot[] = [];
+  const listeners = new Set<(s: PrinterState) => void>();
+  const control = { failNext: 0 };
+  const set = (next: PrinterState) => {
+    state = next;
+    listeners.forEach((l) => l(next));
+  };
+  const link: PrinterLink = {
+    subscribe(onChange) {
+      listeners.add(onChange);
+      onChange(state);
+      return () => listeners.delete(onChange);
+    },
+    async connect(ids) {
+      known = new Set(ids);
+      set({ kind: "ready", name: "EZO" });
+      return ok(undefined);
+    },
+    async reconnect() {
+      return state.kind === "ready" ? ok(undefined) : err("needsTap");
+    },
+    async forget() {
+      set({ kind: "none" });
+    },
+    async known() {
+      return known;
+    },
+    async print(kot) {
+      if (state.kind !== "ready") return err("notReady");
+      if (control.failNext > 0) {
+        control.failNext -= 1;
+        return err("failed");
+      }
+      printed.push(kot);
+      return ok(undefined);
+    },
+  };
+  return { link, printed, control, set };
 }

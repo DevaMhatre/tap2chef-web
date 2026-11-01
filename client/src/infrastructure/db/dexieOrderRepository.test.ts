@@ -57,7 +57,7 @@ describe("dexieOrderRepository", () => {
       { op: "put", table: "outOfStock", record: out },
     ]);
     const s = await next(TODAY, (s) => s.lines.length === 1);
-    expect(s).toEqual({ tables: [table], orders: [order], lines: [line], payments: [], outOfStock: [out] });
+    expect(s).toEqual({ tables: [table], orders: [order], lines: [line], payments: [], outOfStock: [out], kotPrints: [] });
     expect((await db.orders.get(order.id))!.status).toBe("open");
     expect(await db.outbox.count()).toBe(4);
   });
@@ -134,6 +134,14 @@ describe("dexieOrderRepository", () => {
     await db.payments.put({ id: "p9", accountId: "a", createdAt: 1, updatedAt: 1, deleted: false, orderId: order.id, amount: 100, receivedAt: 1, method: "later", customer: "Ravi" });
     const snapshot = await next(TODAY, (s) => s.payments.length > 0);
     expect(snapshot.payments).toEqual([later]);
+  });
+
+  it("keeps the KOTs the kitchen got, with their reprints, and skips a malformed one", async () => {
+    const kot = { id: "round:r1", orderId: order.id, businessDate: TODAY, number: 14, kind: "round" as const, printedAt: 200, reprints: 1 };
+    await dexieOrderRepository.write([{ op: "put", table: "kotPrints", record: kot }]);
+    await db.kotPrints.put({ id: "bad", accountId: "a", createdAt: 1, updatedAt: 1, deleted: false, orderId: "o1", businessDate: TODAY, number: 0, kind: "round", printedAt: 1 });
+    const s = await next(TODAY, (s) => s.kotPrints.length > 0);
+    expect(s.kotPrints).toEqual([kot]);
   });
 
   it("skips malformed payments from sync", async () => {

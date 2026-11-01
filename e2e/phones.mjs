@@ -70,7 +70,7 @@ const owner = await device("owner", { ua: IPHONE });
 // --- The owner shows a code.
 await door(owner.page, "Sharma Dhaba").click();
 await owner.page.getByRole("heading", { name: "Phones" }).waitFor();
-await owner.page.getByText("This phone").waitFor();
+await owner.page.getByText("This phone", { exact: true }).waitFor();
 check(await owner.page.getByText("iPhone", { exact: true }).isVisible(), "owner: its own phone is listed as iPhone, This phone");
 await owner.shot("restaurant-sheet");
 await owner.page.getByRole("button", { name: "Add a Phone" }).click();
@@ -230,7 +230,7 @@ const busy = await device("busy", { ua: ANDROID });
 await owner.page.setViewportSize({ width: 1440, height: 900 });
 await owner.page.emulateMedia({ colorScheme: "dark" });
 await door(owner.page, "Sharma Dhaba").click();
-await owner.page.getByText("This phone").waitFor();
+await owner.page.getByText("This phone", { exact: true }).waitFor();
 await owner.shot("desktop-dark");
 
 for (const d of [owner, waiter, counter, busy]) check(d.errors.length === 0, `no console errors${d.errors.length ? `: ${d.errors.join(" | ")}` : ""}`);

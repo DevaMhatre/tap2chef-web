@@ -17,6 +17,7 @@ export const SHOP_TABLES = [
   "drawerEntries",
   "shopDetails",
   "repayments",
+  "kotPrints",
 ];
 
 export const WRITE_PERMISSION = {
@@ -32,6 +33,8 @@ export const WRITE_PERMISSION = {
   drawerEntries: "day.view",
   /** Money a regular brings back for bills on their name. */
   repayments: "payments.later",
+  /** A KOT printed for the kitchen, by whichever phone prints. */
+  kotPrints: "orders.take",
   /** The restaurant's name and how its customers order. */
   shopDetails: "shops.manage",
 };

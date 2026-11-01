@@ -41,24 +41,24 @@ describe("writing to a Bluetooth printer", () => {
 });
 
 describe("the KOT, for a printer", () => {
-  const kot: Kot = { title: "Table 4", kind: "round", round: 1, at: new Date(2026, 10, 1, 13, 42).getTime(), lines: [{ quantity: 2, name: "Biryani <Special>", portion: "Half" }] };
+  const kot: Kot = { title: "Table 4", kind: "round", number: 14, round: 1, at: new Date(2026, 10, 1, 13, 42).getTime(), lines: [{ quantity: 2, name: "Biryani <Special>", portion: "Half" }] };
 
-  it("is a page the size of a 58 mm roll, with names escaped and HALF in capitals", () => {
+  it("is a page the size of the slip, with names escaped and HALF in capitals", () => {
     const page = kotPage(kot);
-    // Seven lines and a title: a slip, never an A4 page.
-    expect(page).toMatch(/size: 58mm \d+mm;/);
     expect(Number(/size: 58mm (\d+)mm/.exec(page)![1])).toBeLessThan(60);
-    expect(page).toContain("<h1>Table 4</h1>");
-    expect(page).toContain("2 x Biryani &lt;Special&gt; HALF");
+    expect(page).toContain('<p class="title">Table 4</p>');
+    expect(page).toContain("Biryani &lt;Special&gt; HALF (2)");
     expect(page).not.toContain("<Special>");
   });
 
-  it("is ESC/POS bytes: reset, the title, the lines, then the paper fed out", () => {
-    const bytes = kotBytes(kot);
-    expect([...bytes.slice(0, 2)]).toEqual([0x1b, 0x40]);
-    const text = String.fromCharCode(...bytes);
-    expect(text).toContain("Table 4");
-    expect(text).toContain("2 x Biryani <Special> HALF");
-    expect([...bytes.slice(-3)]).toEqual([0x1d, 0x56, 0x01]);
+  it("is ESC/POS bytes: the title double size and centred, the dish tall and bold, then the paper fed out", () => {
+    const bytes = [...kotBytes(kot)];
+    const at = (text: string) => String.fromCharCode(...bytes).indexOf(text);
+    expect(bytes.slice(0, 2)).toEqual([0x1b, 0x40]);
+    const title = at("Table 4");
+    expect(bytes.slice(title - 12, title)).toEqual([0x1b, 0x61, 1, 0x1d, 0x21, 0x11, 0x1b, 0x45, 1, 0x1d, 0x42, 0]);
+    const dish = at("Biryani <Special> HALF (2)");
+    expect(bytes.slice(dish - 12, dish)).toEqual([0x1b, 0x61, 0, 0x1d, 0x21, 0x01, 0x1b, 0x45, 1, 0x1d, 0x42, 0]);
+    expect(bytes.slice(-3)).toEqual([0x1d, 0x56, 0x01]);
   });
 });

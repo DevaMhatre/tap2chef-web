@@ -1,35 +1,40 @@
-import { kotText, type Kot } from "../../domain/kot";
+import { kotLayout, type Kot, type KotRow } from "../../domain/kot";
 import { err, ok } from "../../domain/result";
 import type { KitchenPrinter } from "../../usecases/ports";
-import { receipt } from "./escpos";
+import { slip } from "./escpos";
 
-// The KOT, ready for any way to a printer. The phone's print dialog works
-// with whatever printer the phone already knows (Android print services,
-// AirPrint, a desktop's printer) and prints every script; ESC/POS bytes are
-// for Bluetooth or USB once the printer check says which (9b).
+// The KOT, ready for any way to a printer: ESC/POS bytes for the kitchen
+// printer over Bluetooth, and a page for the phone's print dialog (a reprint
+// when the printer isn't this phone's, or a printer the phone already knows).
 
-const time = (at: number) => new Date(at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
+export const kotTime = (at: number): string => new Date(at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
 
-/** ESC/POS bytes for the slip: the title large and centred, then the lines. */
-export const kotBytes = (kot: Kot): Uint8Array<ArrayBuffer> => receipt({ title: kot.title, lines: kotText(kot, time(kot.at)) });
+/** ESC/POS bytes for the slip. */
+export const kotBytes = (kot: Kot): Uint8Array<ArrayBuffer> => slip(kotLayout(kot, kotTime(kot.at)));
 
 const escape = (text: string) => text.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]!);
+
+// Millimetres each row takes, for the page's own height.
+const ROW_MM: Record<KotRow["style"], number> = { small: 3.75, note: 3.75, dish: 6, title: 8, banner: 8 };
 
 /**
  * A page the size of the slip on a 58 mm roll: black on white, whatever the
  * app's theme. A page needs a real height ("auto" isn't one, and the browser
- * falls back to A4), so it is the slip's own: title, lines, margins.
+ * falls back to A4), so it is the slip's own: its rows and margins.
  */
 export function kotPage(kot: Kot): string {
-  const lines = kotText(kot, time(kot.at));
-  const height = Math.ceil(4 + 8 + lines.length * 3.75 + 4);
+  const rows = kotLayout(kot, kotTime(kot.at));
+  const height = Math.ceil(8 + rows.reduce((mm, r) => mm + ROW_MM[r.style], 0));
   return `<!doctype html><html><head><meta charset="utf-8"><title>${escape(kot.title)}</title><style>
 @page { size: 58mm ${height}mm; margin: 2mm; }
 /* 32 characters to the 54 mm a 58 mm roll prints: a monospace letter is about 0.6em wide. */
 body { margin: 0; width: 54mm; color: #000; background: #fff; font: 2.75mm/1.35 ui-monospace, Menlo, Consolas, monospace; }
-h1 { margin: 0 0 1mm; font-size: 5mm; text-align: center; }
-pre { margin: 0; white-space: pre-wrap; font: inherit; }
-</style></head><body><h1>${escape(kot.title)}</h1><pre>${lines.map(escape).join("\n")}</pre></body></html>`;
+p { margin: 0; white-space: pre; }
+.title, .banner { font-size: 5.5mm; font-weight: bold; text-align: center; }
+.banner { background: #000; color: #fff; }
+/* A page can't print letters taller than they are wide, as the printer does; bold with room around it reads the same. */
+.dish { font-weight: bold; line-height: 6mm; }
+</style></head><body>${rows.map((r) => `<p class="${r.style}">${escape(r.text)}</p>`).join("")}</body></html>`;
 }
 
 export const printDialogKitchen: KitchenPrinter = {

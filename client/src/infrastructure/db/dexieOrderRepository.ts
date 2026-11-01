@@ -22,6 +22,7 @@ import type { OrderChange, OrderRecord, OrderRepository, OrderSnapshot } from ".
 import { db, type StoredRecord, type SyncedTable } from "./db";
 import { isObject, isPaise, isText, isTime, readAll } from "./parse";
 import { writeAll } from "./repo";
+import type { KotPrint } from "../../domain/kot";
 
 // Anti-corruption layer between stored records and the order domain.
 
@@ -31,13 +32,14 @@ const TABLES: Record<OrderRecord["table"], SyncedTable> = {
   lines: "orderItems",
   payments: "payments",
   outOfStock: "outOfStock",
+  kotPrints: "kotPrints",
 };
 
 const DIETS: readonly string[] = ["veg", "nonVeg", "egg"] satisfies Diet[];
 const REASONS: readonly string[] = ["wrongEntry", "guestChangedMind", "outOfStock"] satisfies VoidReason[];
 const isDate = (value: unknown): value is string => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
 
-function toTable(r: StoredRecord): DiningTable | undefined {
+export function toTable(r: StoredRecord): DiningTable | undefined {
   if (!isText(r.name) || !isText(r.sortKey)) return undefined;
   return { id: r.id as TableId, name: r.name, sortKey: r.sortKey };
 }
@@ -154,27 +156,49 @@ function toOutOfStock(r: StoredRecord): OutOfStock | undefined {
   return { id: r.id, itemId: r.itemId as ItemId, businessDate: r.businessDate as BusinessDate };
 }
 
+export function toKotPrint(r: StoredRecord): KotPrint | undefined {
+  if (!isText(r.orderId) || !isDate(r.businessDate) || !Number.isSafeInteger(r.number) || (r.number as number) < 1) return undefined;
+  if ((r.kind !== "round" && r.kind !== "cancel") || !isTime(r.printedAt)) return undefined;
+  if (r.reprints !== undefined && !(Number.isSafeInteger(r.reprints) && (r.reprints as number) >= 0)) return undefined;
+  if (r.cancelledBefore !== undefined && !(Array.isArray(r.cancelledBefore) && r.cancelledBefore.every(isText))) return undefined;
+  return {
+    id: r.id,
+    orderId: r.orderId as OrderId,
+    businessDate: r.businessDate as BusinessDate,
+    number: r.number as number,
+    kind: r.kind,
+    printedAt: r.printedAt,
+    ...(r.reprints !== undefined && { reprints: r.reprints as number }),
+    ...(r.cancelledBefore !== undefined && { cancelledBefore: r.cancelledBefore as string[] }),
+  };
+}
+
 async function readOrders(since: BusinessDate): Promise<OrderSnapshot> {
-  const [tables, open, recent, outOfStock] = await Promise.all([
+  const [tables, open, recent, outOfStock, kotPrints] = await Promise.all([
     db.diningTables.toArray(),
     db.orders.where("status").equals("open").toArray(),
     // Every order of the day, whatever its state: takeaway tokens count them.
     db.orders.where("businessDate").aboveOrEqual(since).toArray(),
     db.outOfStock.where("businessDate").aboveOrEqual(since).toArray(),
+    db.kotPrints.where("businessDate").aboveOrEqual(since).toArray(),
   ]);
   const orderRows = [...new Map([...open, ...recent].map((r) => [r.id, r])).values()];
   const orders = readAll(orderRows, toOrder, "order");
   const ids = orders.map((o) => o.id);
-  const [lines, payments] = await Promise.all([
+  const [lines, payments, ordersKots] = await Promise.all([
     db.orderItems.where("orderId").anyOf(ids).toArray(),
     db.payments.where("orderId").anyOf(ids).toArray(),
+    // An order still open from an earlier day keeps the KOTs it had: never printed twice.
+    db.kotPrints.where("orderId").anyOf(ids).toArray(),
   ]);
+  const kotRows = [...new Map([...kotPrints, ...ordersKots].map((r) => [r.id, r])).values()];
   return {
     tables: readAll(tables, toTable, "table"),
     orders,
     lines: readAll(lines, toLine, "line"),
     payments: readAll(payments, toPayment, "payment"),
     outOfStock: readAll(outOfStock, toOutOfStock, "out-of-stock"),
+    kotPrints: readAll(kotRows, toKotPrint, "kot"),
   };
 }
 

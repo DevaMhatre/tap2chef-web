@@ -43,6 +43,7 @@ export const SHOP_TABLES = [
   "drawerEntries",
   "shopDetails",
   "repayments",
+  "kotPrints",
 ] as const;
 
 export const SYNCED_TABLES = [...BRAND_TABLES, ...SHOP_TABLES] as const;
@@ -172,4 +173,10 @@ db.version(9).stores({
 // trading day it came in (the drawer) and all together (who owes what).
 db.version(10).stores({
   repayments: "id, businessDate, updatedAt",
+});
+
+// Step 9b: the KOTs the kitchen got, read by the trading day, so a round is
+// printed once by whichever phone prints and KOT numbers never repeat.
+db.version(11).stores({
+  kotPrints: "id, businessDate, orderId, updatedAt",
 });

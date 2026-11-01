@@ -5,7 +5,9 @@ import { businessDate, dayAfter, dayBefore, type BusinessDate } from "../domain/
 import type { Result } from "../domain/result";
 import type { Undo } from "./menuEditor";
 import type { DaySnapshot } from "./ports";
+import { kotTally, kotTitle, type KotTally } from "../domain/kot";
 import { usePorts } from "./PortsProvider";
+import { labelOf } from "./useOrders";
 
 export type Day =
   | { state: "loading"; day: BusinessDate; today: BusinessDate }
@@ -15,6 +17,8 @@ export type Day =
       today: BusinessDate;
       isToday: boolean;
       numbers: DayNumbers;
+      /** The night's tally of KOTs, done for the owner; `where` names each unpaid one's table or parcel. */
+      kots: KotTally & { where: Record<string, string> };
       /** The cash box: what it started with, should hold and was counted at. */
       drawer: DrawerView;
       /** State what the box started with, or what was counted in it; replaces an earlier answer. */
@@ -34,14 +38,23 @@ export function useDayNumbers(chosen: BusinessDate | null): Day {
 
   // A snapshot of another day (just changed) is not this day's numbers.
   if (!loaded || loaded.day !== day) return { state: "loading", day, today };
-  const { orders, lines, payments, expenses, drawer: entries, repayments } = loaded.snapshot;
-  const numbers = dayNumbers(day, orders, lines, payments, expenses, repayments);
+  const { orders, lines, payments, expenses, drawer: entries, repayments, kotPrints, tables } = loaded.snapshot;
+  const tally = kotTally(kotPrints, orders, lines, day);
+  const where = Object.fromEntries(
+    tally.unpaid.flatMap((p) => {
+      const order = orders.find((o) => o.id === p.orderId);
+      return order ? [[p.id, kotTitle(labelOf({ order }, tables))]] : [];
+    }),
+  );
+  // Only the day's own orders count in its money: others are here for the KOT tally.
+  const numbers = dayNumbers(day, orders.filter((o) => o.businessDate === day), lines, payments, expenses, repayments);
   return {
     state: "ready",
     day,
     today,
     isToday: day === today,
     numbers,
+    kots: { ...tally, where },
     drawer: drawerOf(entries, day, numbers.drawer),
     // The entry's id is fixed by kind and day, so a double tap writes the same record twice.
     async stateDrawer(kind, amount) {

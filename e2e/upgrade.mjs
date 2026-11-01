@@ -2,8 +2,9 @@
 // live build wrote is upgraded and still shows, and a live-build tab left open
 // during the upgrade keeps working. Written for the Dexie v8 bump (step 10a,
 // the menu moves into a brand), v9 (10c, the setup: a phone with records
-// never sees it) and v10 (11b, money regulars pay back); adjust the checks
-// for the next one.
+// never sees it), v10 (11b, money regulars pay back) and v11 (9b, the KOTs
+// printed); adjust the checks for the next one. LIVE_VERSION=10 for a live
+// build at v10.
 //
 // Build both first: the live one from a worktree of the deployed commit
 // (`git worktree add <dir> <commit>`, link client/node_modules, `npx vite build`)
@@ -14,6 +15,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { chromium } from "playwright";
+import { skipSetup } from "./skipSetup.mjs";
 
 const [LIVE, NEW] = process.argv.slice(2).map((p) => new URL(p, `file://${process.cwd()}/`).pathname);
 const CLIENT = new URL("../client/", import.meta.url).pathname;
@@ -73,7 +75,9 @@ const watch = (page, tag) => {
 };
 const live = await ctx.newPage();
 watch(live, "live");
-await live.goto(`${BASE}/tables`);
+// A live build with the setup (v9 on) opens on it: past it, as a set-up restaurant is.
+if (Number(process.env.LIVE_VERSION ?? 7) >= 9) await skipSetup(live, `${BASE}/tables`);
+else await live.goto(`${BASE}/tables`);
 await live.getByRole("button", { name: /Set Up 6 Tables/ }).click();
 await live.waitForTimeout(300);
 // A price list and a category, shaped as the live build stores them, with their outbox entries.
@@ -93,7 +97,8 @@ await live.goto(`${BASE}/menu`);
 await addItem(live, "Samosa", "20");
 check(await live.getByText("Samosa").isVisible(), "live build: Samosa added");
 const before = await dump(live);
-check(before.version === 70, `live build stores version 7 (${before.version / 10})`);
+const LIVE_VERSION = Number(process.env.LIVE_VERSION ?? 7);
+check(before.version === LIVE_VERSION * 10, `live build stores version ${LIVE_VERSION} (${before.version / 10})`);
 
 // --- This build, on the same origin, with the live tab still open.
 await stop(server);
@@ -106,20 +111,25 @@ await next.waitForTimeout(500);
 check(await next.getByText("Samosa").isVisible(), "new build: the live build's dish still shows");
 const after = await dump(next);
 const accountId = after.meta.find((m) => m.key === "accountId").value;
-check(after.version === 100, `upgraded to version 10 (${after.version / 10})`);
-check(Array.isArray(after.repayments) && after.repayments.length === 0, "the repayments table exists, empty");
+check(after.version === 110, `upgraded to version 11 (${after.version / 10})`);
+check(Array.isArray(after.repayments) && Array.isArray(after.kotPrints) && after.kotPrints.length === 0, "the repayments and KOT tables exist");
 check(after.meta.find((m) => m.key === "setup")?.value === JSON.stringify({ step: "done" }), "a phone with records is never set up");
 check(after.meta.find((m) => m.key === "brandId")?.value === accountId, "the device's brand is the account's first brand");
-for (const table of ["menuProfiles", "categories", "items"]) {
-  check(after[table].length > 0 && after[table].every((r) => r.brandId === accountId), `every ${table} row is in the brand`);
+// The brand migration (v8) only runs from a build before it; seeded rows here are shaped as v7 wrote them.
+if (LIVE_VERSION < 8) {
+  for (const table of ["menuProfiles", "categories", "items"]) {
+    check(after[table].length > 0 && after[table].every((r) => r.brandId === accountId), `every ${table} row is in the brand`);
+  }
 }
 check(after.diningTables.length === 6 && after.diningTables.every((r) => !("brandId" in r) && r.shopId), "shop records stay the shop's, without a brand");
 check(after.outbox.length === before.outbox.length, `the upgrade queued nothing to send (${before.outbox.length} → ${after.outbox.length})`);
 await next.screenshot({ path: `${S}upgrade-new-menu.png` });
-await next.goto(`${BASE}/tables`);
-await next.getByText("Keep a copy of your restaurant safe").waitFor();
-check(true, "the floor offers to keep a copy safe, once");
-await next.screenshot({ path: `${S}upgrade-new-card.png` });
+if (LIVE_VERSION < 9) {
+  await next.goto(`${BASE}/tables`);
+  await next.getByText("Keep a copy of your restaurant safe").waitFor();
+  check(true, "the floor offers to keep a copy safe, once");
+  await next.screenshot({ path: `${S}upgrade-new-card.png` });
+}
 
 // --- The live tab, left open, keeps working; this build sees what it writes.
 await addItem(live, "Chai", "15");

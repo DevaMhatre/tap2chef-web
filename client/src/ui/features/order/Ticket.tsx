@@ -8,6 +8,7 @@ import { DietMark } from "../../design-system/DietMark";
 import { ListSection } from "../../design-system/GroupedList";
 import { Stepper } from "../../design-system/Stepper";
 import { formatPrice, formatTime } from "../../format";
+import type { KotStatus } from "../../../domain/kot";
 import { DishLabel } from "./DishLabel";
 import { dishName, voidReasonLabel } from "./labels";
 
@@ -35,15 +36,24 @@ export function Ticket({ screen, onStep, onEditDraft, onVoid }: Props) {
       {rounds.map((round, i) => (
         <ListSection
           key={round.id}
-          header={`Round ${round.number} · ${formatTime(round.sentAt)}`}
+          header={<RoundHeader round={round} status={screen.kotStatus(round)} />}
           headerAction={
-            <Button variant="plain" size="compact" className="-mr-3" aria-label={`Print round ${round.number} for the kitchen`} onClick={() => void screen.printRound(round.id)}>
-              <MdPrint aria-hidden className="text-lg" />
-              Print
-            </Button>
+            screen.canPrint(round) && (
+              <Button variant="plain" size="compact" className="-mr-3" aria-label={`Print round ${round.number} for the kitchen`} onClick={() => void screen.printRound(round.id)}>
+                <MdPrint aria-hidden className="text-lg" />
+                Print
+              </Button>
+            )
           }
-          // Said once, under the latest round: nothing else hints that a sent dish can be cancelled.
-          footer={i === rounds.length - 1 ? "Tap a sent dish to cancel it." : undefined}
+          // Offline, it says what to do; otherwise said once, under the latest round:
+          // nothing else hints that a sent dish can be cancelled.
+          footer={
+            screen.kotStatus(round).kind === "offline" ? (
+              <span className="font-medium text-warning">This phone has no internet, so the kitchen printer hasn&rsquo;t got this round. Tell the kitchen.</span>
+            ) : i === rounds.length - 1 ? (
+              "Tap a sent dish to cancel it."
+            ) : undefined
+          }
         >
           {round.lines.map((line) => (
             <SentLine key={line.id} line={line} onVoid={onVoid} />
@@ -131,4 +141,14 @@ function SentLine({ line, onVoid }: { line: OrderLine; onVoid: (line: OrderLine)
       <span className="shrink-0 text-[15px] tabular-nums">{formatPrice(lineTotal(line))}</span>
     </button>
   );
+}
+
+// Once printed, the KOT number the kitchen's slip says. Offline, a waiter's
+// round can't reach the kitchen printer: it says so, and what to do is said
+// under the round, where there is room on a phone.
+function RoundHeader({ round, status }: { round: { number: number; sentAt: number }; status: KotStatus }) {
+  const time = formatTime(round.sentAt);
+  if (status.kind === "printed") return <>{`KOT ${status.number} · ${time}`}</>;
+  if (status.kind === "offline") return <span className="text-warning">Not sent to the kitchen</span>;
+  return <>{`Round ${round.number} · ${time}`}</>;
 }

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MdChevronLeft, MdChevronRight, MdInsights } from "react-icons/md";
+import { MdCheckCircle, MdChevronLeft, MdChevronRight, MdInsights } from "react-icons/md";
 import { isQuiet, type DayNumbers } from "../../domain/dayBook";
 import type { DrawerKind } from "../../domain/drawer";
 import type { Paise } from "../../domain/money";
@@ -71,6 +71,7 @@ export default function Today() {
         )}
         <Drawer day={day} onState={setStating} />
         {!quiet && <Attention n={n} />}
+        <KotTallySection day={day} />
         {n.top.length > 0 && (
           <ListSection header="Sold most">
             {n.top.map((d) => (
@@ -197,6 +198,34 @@ function Attention({ n }: { n: DayNumbers }) {
     <ListSection header="Worth a look">
       {facts.map((f) => (
         <ListFact key={f.label} {...f} />
+      ))}
+    </ListSection>
+  );
+}
+
+// The night's tally, done for the owner: every KOT the kitchen got should end
+// in a paid bill. The range says the paper pile is complete; anything not
+// paid is named, so nobody matches slips to bills by hand.
+function KotTallySection({ day }: { day: Extract<Day, { state: "ready" }> }) {
+  const { kots } = day;
+  if (kots.count === 0) return null;
+  const pending = day.isToday ? "Not paid yet" : "Not paid";
+  return (
+    <ListSection header="KOTs" footer={kots.cancels > 0 ? `${kots.cancels} of them ${kots.cancels === 1 ? "was a cancel slip" : "were cancel slips"}.` : undefined}>
+      <ListFact
+        label={kots.first === kots.last ? `KOT ${kots.first}` : `KOT ${kots.first}–${kots.last}`}
+        value={
+          kots.unpaid.length === 0 ? (
+            <span className="inline-flex items-center gap-1 text-success">
+              <MdCheckCircle aria-hidden /> All paid
+            </span>
+          ) : (
+            <span className="text-warning">{kots.unpaid.length} not paid</span>
+          )
+        }
+      />
+      {kots.unpaid.map((p) => (
+        <ListFact key={p.id} label={`KOT ${p.number} · ${kots.where[p.id] ?? "Order"}`} value={<span className="text-[15px] font-normal text-muted">{pending}</span>} />
       ))}
     </ListSection>
   );

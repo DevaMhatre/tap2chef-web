@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { PortsProvider } from "./usecases/PortsProvider";
 import { ShopProvider } from "./usecases/ShopProvider";
+import { KitchenPrintingProvider } from "./usecases/KitchenPrintingProvider";
 import type { Permission } from "./domain/access";
 import { useCan } from "./usecases/usePermissions";
 import { useShowsTables } from "./usecases/useRestaurant";
@@ -9,6 +10,7 @@ import type { Ports } from "./usecases/ports";
 import { dexieMenuRepository } from "./infrastructure/db/dexieMenuRepository";
 import { dexieDayRepository } from "./infrastructure/db/dexieDayRepository";
 import { dexieDuesRepository } from "./infrastructure/db/dexieDuesRepository";
+import { bluetoothLink } from "./infrastructure/printing/bluetoothLink";
 import { printDialogKitchen } from "./infrastructure/printing/kitchenPrinter";
 import { dexieDrawerRepository } from "./infrastructure/db/dexieDrawerRepository";
 import { dexieExpenseRepository } from "./infrastructure/db/dexieExpenseRepository";
@@ -46,6 +48,7 @@ const ports: Ports = {
   days: dexieDayRepository,
   dues: dexieDuesRepository,
   kitchen: printDialogKitchen,
+  printerLink: bluetoothLink,
   drawer: dexieDrawerRepository,
   account: httpAccountService,
   phones: httpPhonesService,
@@ -62,6 +65,7 @@ export default function App() {
       <ShopProvider>
       <UndoToastProvider>
         <CompletionProvider>
+        <KitchenPrintingProvider>
         <BrowserRouter>
           <SetupGate>
           <Routes>
@@ -81,6 +85,7 @@ export default function App() {
           </Routes>
           </SetupGate>
         </BrowserRouter>
+        </KitchenPrintingProvider>
         </CompletionProvider>
       </UndoToastProvider>
       </ShopProvider>

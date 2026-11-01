@@ -4,10 +4,10 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { Category, CategoryId, ItemId, MenuItem, MenuProfile, ProfileId } from "../domain/menu";
 import { paise } from "../domain/money";
-import type { OrderId } from "../domain/order";
+import type { BusinessDate, OrderId } from "../domain/order";
 import type { BillInput } from "../domain/settlement";
 import type { TableId } from "../domain/tables";
-import { fakeClock, fakeIds, fakeKitchenPrinter, fakeMenuRepository, fakeOrderRepository } from "./fakes";
+import { fakeClock, fakeIds, fakeKitchenPrinter, fakeMenuRepository, fakeOrderRepository, fakePrinterLink, fakeSwitch } from "./fakes";
 import type { MenuSnapshot, Ports } from "./ports";
 import { PortsProvider } from "./PortsProvider";
 import { useOrder, type OrderTarget } from "./useOrder";
@@ -37,15 +37,18 @@ const t1 = "t1" as TableId;
 function renderOrder(target: OrderTarget, menuInitial: Partial<MenuSnapshot> = menu) {
   const orders = fakeOrderRepository({ tables: [{ id: t1, name: "1", sortKey: "1" }] });
   const kitchen = fakeKitchenPrinter();
+  const link = fakePrinterLink();
   const ports = {
     menu: fakeMenuRepository(menuInitial).repository,
     orders: orders.repository,
     ids: fakeIds(),
     clock: fakeClock(new Date(2026, 9, 29, 13, 0).getTime()).clock,
     kitchen: kitchen.printer,
+    printerLink: link.link,
+    network: fakeSwitch(true).network,
   } as Partial<Ports> as Ports;
   const wrapper = ({ children }: { children: ReactNode }) => <PortsProvider ports={ports}>{children}</PortsProvider>;
-  return { orders, kitchen, ...renderHook(() => useOrder(target), { wrapper }) };
+  return { orders, kitchen, link, ...renderHook(() => useOrder(target), { wrapper }) };
 }
 
 const ready = <T extends { state: string }>(screen: T) => {
@@ -131,6 +134,28 @@ describe("useOrder", () => {
     const round = ready(result.current).ticket.rounds[0]!;
     expect(await ready(result.current).printRound(round.id)).toEqual({ ok: true, value: undefined });
     expect(kitchen.printed).toEqual([expect.objectContaining({ title: "Table 1", kind: "round", round: 1, lines: [{ quantity: 1, name: "Dal Makhani" }] })]);
+  });
+
+  it("reprints a printed round on the kitchen printer, says REPRINT under its number, and counts it", async () => {
+    const { result, orders, link, kitchen } = renderOrder({ kind: "table", tableId: t1 });
+    await waitFor(() => expect(result.current.state).toBe("ready"));
+    await act(async () => {
+      await ready(result.current).addDish(ready(result.current).dishes[0]!);
+      await ready(result.current).send();
+    });
+    const round = ready(result.current).ticket.rounds[0]!;
+    await act(async () => {
+      await orders.repository.write([{ op: "put", table: "kotPrints", record: { id: `round:${round.id}`, orderId: round.lines[0]!.orderId, businessDate: "2026-10-29" as BusinessDate, number: 7, kind: "round", printedAt: 1 } }]);
+    });
+    expect(ready(result.current).kotStatus(round)).toEqual({ kind: "printed", number: 7 });
+    expect(ready(result.current).canPrint(round)).toBe(true);
+    await act(async () => {
+      await link.link.connect([]);
+      await ready(result.current).printRound(round.id);
+    });
+    expect(link.printed).toEqual([expect.objectContaining({ number: 7, reprint: true })]);
+    expect(kitchen.printed).toEqual([]);
+    expect(orders.current().kotPrints[0]!.reprints).toBe(1);
   });
 
   it("lets a new order switch price list before its first dish", async () => {
