@@ -261,6 +261,93 @@ describe("permissions", () => {
     await device.push([item("i1")]).expect(403);
   });
 
+  it("lets only a manager or the owner put a bill on a regular's name, or take it back; staff may still move one", async () => {
+    const staff = await memberDevice("staff");
+    const later = (id, over = {}) => ({ table: "payments", record: { id, shopId: staff.shopId, method: "later", customer: "Sharma ji", phone: "9876543210", ...over } });
+    await staff.device.push([later("p1")]).expect(403);
+    await staff.device.push([{ table: "repayments", record: { id: "r1", shopId: staff.shopId } }]).expect(403);
+    await staff.device.push([{ table: "payments", record: { id: "p2", shopId: staff.shopId, method: "cash" } }]).expect(200);
+    await staff.device.push([later("p2")]).expect(403); // cash turned later
+
+    const manager = await addMember(staff.accountId, { name: "Asha", roleId: "manager" });
+    const boss = as((await phoneToken(staff.accountId, manager._id)).token);
+    await boss.push([later("p3"), { table: "repayments", record: { id: "r1", shopId: staff.shopId } }]).expect(200);
+    // Two orders at one table joined on a waiter's phone: the bill moves, still on the name.
+    await staff.device.push([later("p3", { orderId: "o9" })]).expect(200);
+  });
+
+  it("lets only the owner give or change a discount; staff carry one already agreed", async () => {
+    const { accountId, shopId, owner } = await createAccount("D");
+    const staffMember = await addMember(accountId, { name: "Ravi", roleId: "staff" });
+    const staff = as((await phoneToken(accountId, staffMember._id)).token);
+    const managerMember = await addMember(accountId, { name: "Asha", roleId: "manager" });
+    const manager = as((await phoneToken(accountId, managerMember._id)).token);
+    const boss = as((await phoneToken(accountId, owner._id)).token);
+    const billed = (discount) => order("o1", shopId, { status: "billed", state: { status: "billed", billedAt: 1, ...(discount && { discount }) } });
+
+    await staff.push([billed({ amount: 5000, reason: "" })]).expect(403);
+    await manager.push([billed({ amount: 5000, reason: "" })]).expect(403);
+    await boss.push([billed({ amount: 5000, reason: "Regular" })]).expect(200);
+    // Settling it on a waiter's phone carries the discount unchanged.
+    await staff.push([order("o1", shopId, { status: "settled", state: { status: "settled", billedAt: 1, settledAt: 2, subtotal: 30000, discount: { amount: 5000, reason: "Regular" } } })]).expect(200);
+    await staff.push([billed({ amount: 9000, reason: "Regular" })]).expect(403);
+    // One more dish drops the discount: anyone may.
+    await staff.push([order("o1", shopId, { status: "open", state: { status: "open" } })]).expect(200);
+  });
+
+  it("lets only a manager put a payment's method right or take a payment or an expense off", async () => {
+    const { accountId, shopId } = await createAccount("C");
+    const device = async (roleId) => as((await phoneToken(accountId, (await addMember(accountId, { name: roleId, roleId }))._id)).token);
+    const [staff, manager] = [await device("staff"), await device("manager")];
+    const payment = (over = {}) => ({ table: "payments", record: { id: "p1", shopId, orderId: "o1", amount: 22000, method: "cash", receivedAt: 1, ...over } });
+    const expense = (over = {}) => ({ table: "expenses", record: { id: "e1", shopId, amount: 5000, method: "cash", ...over } });
+
+    await staff.push([payment(), expense()]).expect(200);
+    await staff.push([payment({ method: "upi", correctedAt: 2 })]).expect(403);
+    await staff.push([payment({ removedAt: 2 })]).expect(403);
+    await staff.push([expense({ removedAt: 2 })]).expect(403);
+    // Moved onto the table's other order (two phones joined): nothing about the money changed.
+    await staff.push([payment({ orderId: "o2" })]).expect(200);
+
+    await manager.push([payment({ orderId: "o2", method: "upi", correctedAt: 2 })]).expect(200);
+    await manager.push([payment({ orderId: "o2", method: "upi", correctedAt: 2, removedAt: 3 })]).expect(200);
+    await manager.push([payment({ orderId: "o2", method: "upi", correctedAt: 2 })]).expect(200); // Undo puts it back
+    await manager.push([expense({ removedAt: 2 })]).expect(200);
+  });
+
+  it("lets a waiter undo money just taken, but not delete it once Undo's moment has passed", async () => {
+    const { accountId, shopId } = await createAccount("U");
+    const device = async (roleId) => as((await phoneToken(accountId, (await addMember(accountId, { name: roleId, roleId }))._id)).token);
+    const [staff, manager] = [await device("staff"), await device("manager")];
+    const payment = (id, over = {}) => ({ table: "payments", record: { id, shopId, orderId: "o1", amount: 22000, method: "cash", receivedAt: 1, ...over } });
+
+    await staff.push([payment("p1"), payment("p2")]).expect(200);
+    await staff.push([payment("p1", { deleted: true })]).expect(200); // Undo, seconds later
+    // p2 reached the account three minutes ago.
+    await SyncRecord.collection.updateOne({ accountId, table: "payments", id: "p2" }, { $set: { updatedAt: new Date(Date.now() - 3 * 60_000) } });
+    const refused = await staff.push([payment("p2", { deleted: true })]).expect(403);
+    expect(refused.body.current).toMatchObject({ id: "p2", amount: 22000, deleted: false });
+    await manager.push([payment("p2", { deleted: true })]).expect(200);
+  });
+
+  it("lets no waiter move a bill on a regular's name to another number or shrink it", async () => {
+    const { accountId, shopId } = await createAccount("L");
+    const device = async (roleId) => as((await phoneToken(accountId, (await addMember(accountId, { name: roleId, roleId }))._id)).token);
+    const [staff, manager] = [await device("staff"), await device("manager")];
+    const later = (over = {}) => ({ table: "payments", record: { id: "p1", shopId, orderId: "o1", amount: 30000, method: "later", customer: "Sharma ji", phone: "9876543210", ...over } });
+    await manager.push([later()]).expect(200);
+    await staff.push([later({ phone: "9123456780" })]).expect(403);
+    await staff.push([later({ amount: 100 })]).expect(403);
+    await staff.push([later({ orderId: "o2" })]).expect(200);
+  });
+
+  it("answers a refused new record with nothing held", async () => {
+    const { accountId, shopId } = await createAccount("N");
+    const staff = as((await phoneToken(accountId, (await addMember(accountId, { name: "Ravi", roleId: "staff" }))._id)).token);
+    const reply = await staff.push([{ table: "payments", record: { id: "p9", shopId, method: "later", customer: "A", phone: "9876543210", amount: 100 } }]).expect(403);
+    expect(reply.body.current).toBeNull();
+  });
+
   it("lets a manager over all shops edit the menu", async () => {
     const { device } = await memberDevice("manager");
     await device.push([item("i1")]).expect(200);

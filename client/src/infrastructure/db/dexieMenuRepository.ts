@@ -1,5 +1,6 @@
 import { liveQuery } from "dexie";
-import type { Category, CategoryId, Diet, ItemId, MenuItem, MenuProfile, Pricing, ProfileId } from "../../domain/menu";
+import type { Category, CategoryId, Diet, ItemId, MenuItem, MenuProfile, Portion, Pricing, ProfileId } from "../../domain/menu";
+import type { Paise } from "../../domain/money";
 import type { MenuChange, MenuRecord, MenuRepository, MenuSnapshot } from "../../usecases/ports";
 import { db, type StoredRecord, type SyncedTable } from "./db";
 import { isPaise, isText, readAll } from "./parse";
@@ -28,9 +29,18 @@ function toCategory(r: StoredRecord): Category | undefined {
   return { id: r.id as CategoryId, name: r.name, sortKey: r.sortKey };
 }
 
+function toPortion(value: unknown): Portion | undefined {
+  const p = value as { name?: unknown; price?: unknown } | null;
+  return isText(p?.name) && isPaise(p.price) ? { name: p.name, price: p.price as Paise } : undefined;
+}
+
 function toPricing(value: unknown): Pricing | undefined {
-  const p = value as { kind?: unknown; price?: unknown } | null;
-  if (p?.kind === "fixed" && isPaise(p.price)) return { kind: "fixed", price: p.price as Pricing["price"] };
+  const p = value as { kind?: unknown; price?: unknown; portions?: unknown } | null;
+  if (p?.kind === "fixed" && isPaise(p.price)) return { kind: "fixed", price: p.price as Paise };
+  if (p?.kind === "portions" && Array.isArray(p.portions) && p.portions.length > 0) {
+    const portions = p.portions.map(toPortion);
+    if (portions.every((x) => x !== undefined)) return { kind: "portions", portions };
+  }
   return undefined;
 }
 

@@ -1,5 +1,12 @@
-import { NAME_MAX, type ItemDraftErrors, type MenuItem, type MenuProfile, type NameError, type PriceError } from "../../../domain/menu";
+import { mainPrice, samePricing, type HalfError, NAME_MAX, type ItemDraftErrors, type Pricing, type MenuItem, type MenuProfile, type NameError, type PriceError } from "../../../domain/menu";
 import { formatPrice } from "../../format";
+
+/** "₹220", or "Half ₹180 · Full ₹320". */
+export function pricingText(pricing: Pricing): string {
+  return pricing.kind === "fixed"
+    ? formatPrice(pricing.price)
+    : pricing.portions.map((p) => `${p.name} ${formatPrice(p.price)}`).join(" · ");
+}
 
 // The words the owner reads. Rules live in the domain; this file only says
 // them in plain language.
@@ -17,6 +24,13 @@ const PRICE: Record<PriceError, string> = {
 };
 
 export const priceMessage = (error: PriceError | undefined) => (error ? PRICE[error] : undefined);
+
+export const halfMessage = (error: HalfError | undefined) =>
+  error === "notLess" ? "Half should cost less than full" : error === "required" ? "Enter the half price" : priceMessage(error);
+
+export function firstHalfMessage(errors: ItemDraftErrors): string | undefined {
+  return halfMessage(Object.values(errors.halves ?? {})[0]);
+}
 
 /** One message for quick add, which has a single price field for every list. */
 export function firstPriceMessage(errors: ItemDraftErrors): string | undefined {
@@ -40,14 +54,14 @@ export function priceSummary(
 ): string {
   const sold = profiles.flatMap((profile) => {
     const pricing = item.prices[profile.id];
-    return pricing ? [{ profile, price: pricing.price }] : [];
+    return pricing ? [{ profile, pricing }] : [];
   });
   if (sold.length === 0) return "Not on sale";
 
-  const same = sold.every((s) => s.price === sold[0]!.price);
+  const same = sold.every((s) => samePricing(s.pricing, sold[0]!.pricing));
   const prices = same
-    ? formatPrice(sold[0]!.price)
-    : sold.map((s) => (named ? `${s.profile.name} ${formatPrice(s.price)}` : formatPrice(s.price))).join(" · ");
+    ? pricingText(sold[0]!.pricing)
+    : sold.map((s) => (named ? `${s.profile.name} ${pricingText(s.pricing)}` : pricingText(s.pricing))).join(" · ");
   if (sold.length === profiles.length) return prices;
   return `${prices} · ${sold.map((s) => s.profile.name).join(", ")} only`;
 }
@@ -60,12 +74,15 @@ export function priceSummary(
 export function compactPrices(item: MenuItem, profiles: readonly MenuProfile[]): { main: string; detail?: string } {
   const sold = profiles.flatMap((profile) => {
     const pricing = item.prices[profile.id];
-    return pricing ? [{ profile, price: pricing.price }] : [];
+    return pricing ? [{ profile, pricing }] : [];
   });
   const [first, ...rest] = sold;
   if (!first) return { main: "Not on sale" };
 
-  const notes = rest.filter((s) => s.price !== first.price).map((s) => `${s.profile.name} ${formatPrice(s.price)}`);
+  // A half leads the second line: the full price is already on the right.
+  const notes = first.pricing.kind === "portions" ? [pricingText({ ...first.pricing, portions: first.pricing.portions.slice(0, -1) })] : [];
+  notes.push(...rest.filter((s) => !samePricing(s.pricing, first.pricing)).map((s) => `${s.profile.name} ${pricingText(s.pricing)}`));
   if (sold.length < profiles.length) notes.push(`${sold.map((s) => s.profile.name).join(", ")} only`);
-  return notes.length > 0 ? { main: formatPrice(first.price), detail: notes.join(" · ") } : { main: formatPrice(first.price) };
+  const main = formatPrice(mainPrice(first.pricing));
+  return notes.length > 0 ? { main, detail: notes.join(" · ") } : { main };
 }

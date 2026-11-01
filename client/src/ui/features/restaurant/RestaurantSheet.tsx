@@ -107,8 +107,11 @@ function PhonesSection({ onAdd, onRemove }: { onAdd: () => void; onRemove: (phon
         phones.phones.map((phone) => (
           <div key={phone.id} className="flex min-h-14 items-center gap-3 px-4 py-2">
             <span className="min-w-0 flex-1">
-              <span className="block truncate text-[17px]">{phone.label}</span>
-              <span className="block truncate text-[13px] text-muted">{phone.current ? "This phone" : formatLastSeen(phone.lastSeenAt, now)}</span>
+              <span className="block truncate text-[17px]">{phone.person ?? phone.label}</span>
+              <span className="block truncate text-[13px] text-muted">
+                {phone.person ? `${phone.label} · ` : ""}
+                {phone.current ? "This phone" : formatLastSeen(phone.lastSeenAt, now)}
+              </span>
             </span>
             {!phone.current && (
               <Button variant="plain" size="compact" className="-mr-3" onClick={() => onRemove(phone)}>

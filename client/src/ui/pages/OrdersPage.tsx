@@ -12,17 +12,22 @@ import { formatPrice, formatSentAgo, formatWaited } from "../format";
 import { useShowsTables } from "../../usecases/useRestaurant";
 import { useTakeawayIsMain } from "../../usecases/useRestaurantDetails";
 import { useNow } from "../useNow";
+import { useCan } from "../../usecases/usePermissions";
+import { useDues } from "../../usecases/useDues";
 
 // The live service: every order with something on it, dine-in apart from
 // takeaway, the one waiting longest at the top. What is already paid is one
 // row at the bottom, a tap away, never in the way.
 export default function OrdersPage() {
   const orders = useOrders();
+  const dues = useDues();
   const navigate = useNavigate();
   const now = useNow();
   const tables = useShowsTables() !== false;
   // At a dine-in-only place a parcel still happens, but it isn't the screen's main action.
   const takeawayIsMain = useTakeawayIsMain();
+  // The day's takings are for the owner and a manager, not every waiter.
+  const can = useCan();
 
   if (orders.state === "loading") return <PageHeader title="Orders" />;
 
@@ -94,10 +99,10 @@ export default function OrdersPage() {
         )}
         {dineIn.length > 0 && <ListSection header={`Dine-in · ${dineIn.length}`}>{dineIn.map(row)}</ListSection>}
         {takeaway.length > 0 && <ListSection header={`Takeaway · ${takeaway.length}`}>{takeaway.map(row)}</ListSection>}
-        {settled.length > 0 && (
+        {settled.length > 0 && can("day.view") && (
           <ListSection>
             <ListRow
-              detail={`Cash ${formatPrice(takings.cash)} · UPI ${formatPrice(takings.upi)}`}
+              detail={`Cash ${formatPrice(takings.cash)} · UPI ${formatPrice(takings.upi)}${takings.later > 0 ? ` · Later ${formatPrice(takings.later)}` : ""}`}
               trailing={
                 <span className="flex items-center gap-1 text-[17px] font-semibold tabular-nums">
                   {formatPrice(takings.total)}
@@ -107,6 +112,22 @@ export default function OrdersPage() {
               onClick={() => navigate("/orders/settled")}
             >
               Settled today · {settled.length} {settled.length === 1 ? "bill" : "bills"}
+            </ListRow>
+          </ListSection>
+        )}
+        {dues.state === "ready" && dues.dues.length > 0 && can("payments.later") && (
+          <ListSection>
+            <ListRow
+              detail={`${dues.dues.length} ${dues.dues.length === 1 ? "regular" : "regulars"}`}
+              trailing={
+                <span className="flex items-center gap-1 text-[17px] font-semibold tabular-nums">
+                  {formatPrice(dues.total)}
+                  <MdChevronRight aria-hidden className="-mr-1 text-2xl text-muted" />
+                </span>
+              }
+              onClick={() => navigate("/orders/later")}
+            >
+              Pay later
             </ListRow>
           </ListSection>
         )}

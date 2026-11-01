@@ -43,10 +43,10 @@ const pending = (id: string, channel: Order["channel"] = { type: "dineIn", table
 });
 const takeaway = (id: string) => pending(id, { type: "takeaway", token: 0 });
 
-async function setup(initial: Partial<OrderSnapshot> = { tables }) {
+async function setup(initial: Partial<OrderSnapshot> = { tables }, who?: string) {
   const fake = fakeOrderRepository(initial);
   const time = fakeClock(NOON);
-  const desk = createOrderDesk(fake.repository, fakeIds(), time.clock);
+  const desk = createOrderDesk(fake.repository, fakeIds(), time.clock, () => who);
   desk.subscribe(() => {});
   await Promise.resolve(); // first emission
   return { fake, time, desk: desk.commands };
@@ -377,3 +377,28 @@ describe("the bill", () => {
     expect(await desk.correctPayment("nope" as PaymentId, "upi")).toEqual({ ok: false, error: "missing" });
   });
 });
+
+describe("by Ravi", () => {
+  it("names who cancelled a dish and who took the money, and no one on a phone working alone", async () => {
+    const ravi = await setup({ tables }, "Ravi");
+    await ravi.desk.addDish(pending("o1"), roti);
+    await ravi.desk.addDish(pending("o1"), roti);
+    await ravi.desk.send("o1" as OrderId);
+    const [line] = linesOf(ravi.fake.current(), "o1");
+    await ravi.desk.voidLine(line!.id, 1, "wrongEntry");
+    const voided = linesOf(ravi.fake.current(), "o1").find((l) => l.state.status === "voided")!;
+    expect(voided.state).toMatchObject({ status: "voided", by: "Ravi" });
+    expect(linesOf(ravi.fake.current(), "o1").find((l) => l.state.status === "sent")!.state).not.toHaveProperty("by");
+    await ravi.desk.presentBill("o1" as OrderId);
+    await ravi.desk.receive("o1" as OrderId, { method: "cash" }, paise(2000));
+    expect(ravi.fake.current().payments[0]).toMatchObject({ by: "Ravi" });
+
+    const alone = await setup();
+    await alone.desk.addDish(pending("o1"), roti);
+    await alone.desk.send("o1" as OrderId);
+    await alone.desk.presentBill("o1" as OrderId);
+    await alone.desk.receive("o1" as OrderId, { method: "cash" }, paise(2000));
+    expect(alone.fake.current().payments[0]).not.toHaveProperty("by");
+  });
+});
+

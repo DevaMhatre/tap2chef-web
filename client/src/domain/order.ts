@@ -1,8 +1,8 @@
-import { normalizeName, unitPrice, type Diet, type Id, type ItemId, type MenuProfile, type OrderableItem, type ProfileId } from "./menu";
+import { normalizeName, priceOf, type Diet, type Id, type ItemId, type MenuProfile, type OrderableItem, type ProfileId } from "./menu";
 import { addPaise, multiplyPaise, type Paise } from "./money";
 import { sortByOrder } from "./ordering";
 import { err, ok, type Result } from "./result";
-import { amountDue, amountPaid, type Discount, type Tender } from "./settlement";
+import { amountDue, amountPaid, type Discount, type PaymentMethod, type Tender } from "./settlement";
 import type { DiningTable, TableId } from "./tables";
 
 export type OrderId = Id<"OrderId">;
@@ -65,6 +65,8 @@ export type Payment = {
   correctedAt?: number;
   /** Taken off the bill (recorded twice, or a typo); kept and shown, never counted. */
   removedAt?: number;
+  /** Who took it ("Ravi", "Owner"), as named when it was taken. Missing on a phone working alone. */
+  by?: string;
 } & Tender;
 
 /** A payment that counts towards the bill and the day's money. */
@@ -87,7 +89,7 @@ export type LineState =
   | { status: "sent"; roundId: RoundId; sentAt: number }
   // Only a sent line is voided; a draft line is simply removed. A void is
   // kept for good so the day's numbers can show it.
-  | { status: "voided"; roundId: RoundId; sentAt: number; voidedAt: number; reason?: VoidReason };
+  | { status: "voided"; roundId: RoundId; sentAt: number; voidedAt: number; reason?: VoidReason; by?: string };
 
 export type VoidReason = "wrongEntry" | "guestChangedMind" | "outOfStock";
 
@@ -97,6 +99,8 @@ export type OrderLine = {
   itemId: ItemId;
   /** Snapshot when added: a menu edit mid-meal never changes the cart. */
   name: string;
+  /** "Half", when the dish was ordered as a portion; also a snapshot. */
+  portion?: string;
   diet: Diet;
   unitPrice: Paise;
   quantity: number;
@@ -126,32 +130,42 @@ const byAdded = (a: OrderLine, b: OrderLine) =>
   a.addedAt !== b.addedAt ? a.addedAt - b.addedAt : a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 
 /**
- * A tapped dish: one more of its plain draft line, or a new line. A dish
- * already sent gets a new line, so the kitchen reads "+1 Roti".
+ * A tapped dish (or one of its portions): one more of its plain draft line,
+ * or a new line. A dish already sent gets a new line, so the kitchen reads
+ * "+1 Roti"; a half and a full are always two lines.
  */
 export function addToDraft(
   lines: readonly OrderLine[],
   orderId: OrderId,
   { item, pricing }: OrderableItem,
+  portion: string | undefined,
   newId: LineId,
   at: number,
-): OrderLine {
+): Result<OrderLine, "noPortion"> {
+  const price = priceOf(pricing, portion);
+  if (price === undefined) return err("noPortion");
   const plain = lines.find(
-    (l) => l.orderId === orderId && l.itemId === item.id && l.state.status === "draft" && l.note === "",
+    (l) =>
+      l.orderId === orderId &&
+      l.itemId === item.id &&
+      l.portion === portion &&
+      l.state.status === "draft" &&
+      l.note === "",
   );
-  if (plain) return { ...plain, quantity: Math.min(plain.quantity + 1, QUANTITY_MAX) };
-  return {
+  if (plain) return ok({ ...plain, quantity: Math.min(plain.quantity + 1, QUANTITY_MAX) });
+  return ok({
     id: newId,
     orderId,
     itemId: item.id,
     name: item.name,
+    ...(portion !== undefined && { portion }),
     diet: item.diet,
-    unitPrice: unitPrice(pricing),
+    unitPrice: price,
     quantity: 1,
     note: "",
     addedAt: at,
     state: { status: "draft" },
-  };
+  });
 }
 
 /** `settled`: the bill is closed; nothing on it changes any more. */
@@ -314,13 +328,19 @@ function settled(order: Order, bill: BillView, at: number): Order {
 
 /**
  * "It was UPI, not cash." The method changes; the amount can't, so a
- * correction never moves the day's total, only which drawer it is in.
+ * correction never moves the day's total, only which drawer it is in. A bill
+ * on a regular's name is in no drawer: it is paid back, never corrected.
  */
-export function correctPayment(payment: Payment, method: Tender["method"], at: number): Result<Payment, "unchanged" | "removed"> {
+export function correctPayment(
+  payment: Payment,
+  method: PaymentMethod,
+  at: number,
+): Result<Payment, "unchanged" | "removed" | "later"> {
   if (!counts(payment)) return err("removed");
+  if (payment.method === "later") return err("later");
   if (payment.method === method) return err("unchanged");
-  const { id, orderId, amount, receivedAt } = payment;
-  return ok({ id, orderId, amount, receivedAt, method, correctedAt: at });
+  const { id, orderId, amount, receivedAt, by } = payment;
+  return ok({ id, orderId, amount, receivedAt, ...(by !== undefined && { by }), method, correctedAt: at });
 }
 
 export type RemoveError = "removed" | "leavesShort";

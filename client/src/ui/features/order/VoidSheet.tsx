@@ -8,7 +8,8 @@ import { haptic } from "../../design-system/haptic";
 import { Sheet } from "../../design-system/Sheet";
 import { Stepper } from "../../design-system/Stepper";
 import { useUndoToast } from "../../design-system/UndoToast";
-import { VOID_REASONS } from "./labels";
+import { DishLabel } from "./DishLabel";
+import { dishName, VOID_REASONS } from "./labels";
 
 type Props = { line: OrderLine | null; screen: ReadyOrder; onClose: () => void };
 
@@ -32,18 +33,18 @@ function VoidForm({ line, screen, onClose }: { line: OrderLine; screen: ReadyOrd
     onClose();
     if (!result.ok) return;
     haptic();
-    showUndo(reason === "outOfStock" ? `${line.name} is out today` : `Cancelled ${quantity} ${line.name}`, result.value);
+    showUndo(reason === "outOfStock" ? `${dishName(line)} is out today` : `Cancelled ${quantity} ${dishName(line)}`, result.value);
   }
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between gap-3 rounded-2xl bg-surface px-4 py-2">
         <span className="min-w-0">
-          <span className="block truncate text-[17px] font-semibold">{line.name}</span>
+          <DishLabel line={line} className="text-[17px] font-semibold" />
           <span className="block text-[13px] text-muted">Already sent to the kitchen</span>
         </span>
         {line.quantity > 1 && (
-          <Stepper value={quantity} label={line.name} max={line.quantity} onStep={(by) => setQuantity((q) => q + by)} />
+          <Stepper value={quantity} label={dishName(line)} max={line.quantity} onStep={(by) => setQuantity((q) => q + by)} />
         )}
       </div>
 
@@ -62,7 +63,7 @@ function VoidForm({ line, screen, onClose }: { line: OrderLine; screen: ReadyOrd
       </ListSection>
 
       <Button className="w-full" onClick={cancel}>
-        Cancel {quantity} {line.name}
+        Cancel {quantity} {dishName(line)}
       </Button>
     </div>
   );

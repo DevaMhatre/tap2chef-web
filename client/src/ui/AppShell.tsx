@@ -9,11 +9,14 @@ import {
   MdInsights,
   MdCheckCircle,
   MdCloudDone,
+  MdErrorOutline,
   MdExpandMore,
 } from "react-icons/md";
+import type { Permission } from "../domain/access";
+import { useCan } from "../usecases/usePermissions";
 import { useRestaurantName, useShowsTables } from "../usecases/useRestaurant";
 import { useDeviceSession } from "../usecases/useSignIn";
-import { useSync } from "../usecases/useSync";
+import { useRefusedChanges, useSync } from "../usecases/useSync";
 import { AccountSheet } from "./features/account/AccountSheet";
 import type { Phone } from "../domain/phones";
 import { useRemovePhone } from "../usecases/usePhones";
@@ -22,12 +25,14 @@ import { RemovePhoneSheet } from "./features/restaurant/RemovePhoneSheet";
 import { RestaurantSheet } from "./features/restaurant/RestaurantSheet";
 import { SafeCopyCard } from "./features/setup/SafeCopyCard";
 
-const NAV: { to: string; label: string; icon: IconType }[] = [
+// A tab shows only to a phone that may use it: a waiter's phone has no Menu
+// to edit and no day's money to read.
+const NAV: { to: string; label: string; icon: IconType; needs?: Permission }[] = [
   { to: "/tables", label: "Tables", icon: MdTableRestaurant },
   { to: "/orders", label: "Orders", icon: MdReceiptLong },
-  { to: "/menu", label: "Menu", icon: MdMenuBook },
+  { to: "/menu", label: "Menu", icon: MdMenuBook, needs: "menu.edit" },
   { to: "/expenses", label: "Expenses", icon: MdPayments },
-  { to: "/today", label: "Today", icon: MdInsights },
+  { to: "/today", label: "Today", icon: MdInsights, needs: "day.view" },
 ];
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
@@ -48,17 +53,28 @@ const tabClass = ({ isActive }: { isActive: boolean }) =>
 function SavedBadge() {
   const session = useDeviceSession();
   const kept = useSync(Boolean(session));
+  const { refused, dismiss } = useRefusedChanges();
   const [open, setOpen] = useState(false);
-  const Icon = kept === "online" ? MdCloudDone : MdCheckCircle;
+  // The one thing worth breaking the calm for: a change that didn't count.
+  const notSaved = refused.length > 0;
+  const Icon = notSaved ? MdErrorOutline : kept === "online" ? MdCloudDone : MdCheckCircle;
   return (
     <>
       <button type="button" onClick={() => setOpen(true)} className="group -my-1.5 inline-flex min-h-11 shrink-0 items-center">
-        <span className="inline-flex items-center gap-1 rounded-full bg-success/15 px-2.5 py-1 text-xs font-semibold text-success transition-transform group-active:scale-[0.96]">
+        <span
+          className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold transition-transform group-active:scale-[0.96] ${
+            notSaved ? "bg-warning/15 text-warning" : "bg-success/15 text-success"
+          }`}
+        >
           <Icon className="text-sm" aria-hidden />
-          {kept === "online" ? "Saved online" : "Saved on this device"}
+          {notSaved
+            ? `${refused.length} ${refused.length === 1 ? "change" : "changes"} not saved`
+            : kept === "online"
+              ? "Saved online"
+              : "Saved on this device"}
         </span>
       </button>
-      <AccountSheet open={open} session={session} kept={kept} onClose={() => setOpen(false)} />
+      <AccountSheet open={open} session={session} kept={kept} refused={refused} onDismissRefused={dismiss} onClose={() => setOpen(false)} />
     </>
   );
 }
@@ -112,7 +128,8 @@ export default function AppShell() {
   const name = useRestaurantName() ?? "Tap2Chef";
   // A kitchen whose customers only take food away has no floor to show.
   const tables = useShowsTables() !== false;
-  const nav = tables ? NAV : NAV.filter(({ to }) => to !== "/tables");
+  const can = useCan();
+  const nav = NAV.filter(({ to, needs }) => (tables || to !== "/tables") && (!needs || can(needs)));
 
   return (
     <div className="min-h-dvh bg-bg text-ink md:flex">

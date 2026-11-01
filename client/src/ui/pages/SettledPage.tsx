@@ -74,6 +74,11 @@ export default function SettledPage() {
           </div>
         ))}
       </div>
+      {takings.later > 0 && (
+        <p className="-mt-3 mb-6 text-center text-[15px] text-muted">
+          <span className="tabular-nums">{formatPrice(takings.later)}</span> of it on regulars&rsquo; names, to come later.
+        </p>
+      )}
       {settled.length === 0 ? (
         <p className="py-12 text-center text-[15px] text-muted">Nothing settled yet today.</p>
       ) : (

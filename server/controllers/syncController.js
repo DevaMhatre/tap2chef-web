@@ -3,7 +3,7 @@ import Brand from "../models/Brand.js";
 import Shop from "../models/Shop.js";
 import SyncRecord from "../models/SyncRecord.js";
 import { can, OWNER_PHONE_ONLY } from "../domain/access.js";
-import { isShopTable, WRITE_PERMISSION } from "../domain/tables.js";
+import { contentPermissions, isShopTable, WRITE_PERMISSION } from "../domain/tables.js";
 import { serialByKey } from "../lib/serialByKey.js";
 
 export const PULL_LIMIT = 500;
@@ -65,14 +65,32 @@ export async function push(req, res) {
   // over by sending its id.
   const stored = await SyncRecord.find(
     { accountId, id: { $in: changes.map(({ record }) => record.id) } },
-    { table: 1, id: 1, shopId: 1, brandId: 1 },
+    { table: 1, id: 1, shopId: 1, brandId: 1, data: 1, deleted: 1, updatedAt: 1 },
   ).lean();
   const storedOwner = new Map(stored.map((row) => [`${row.table}/${row.id}`, ownerOf(row)]));
+  const storedRows = new Map(stored.map((row) => [`${row.table}/${row.id}`, row]));
+  const asStored = (row) => row && { data: row.data, deleted: row.deleted, arrivedAt: new Date(row.updatedAt).getTime() };
+  // What the account holds for a refused record, so the phone can show that
+  // instead of its own change; null when the account has none.
+  const current = (table, id) => {
+    const row = storedRows.get(`${table}/${id}`);
+    return row ? { ...row.data, id: row.id, ...(row.shopId ? { shopId: row.shopId } : { brandId: row.brandId }), deleted: row.deleted } : null;
+  };
   const moved = changes.some(({ table, record }) => {
     const owner = storedOwner.get(`${table}/${record.id}`);
     return owner !== undefined && owner !== ownerOf(record);
   });
   if (moved) return fail(res, 409, "A record can't move to another shop or brand");
+
+  // A discount, or a bill on a regular's name, needs its own permission,
+  // whatever the phone's screens allowed.
+  const { member } = req.device;
+  for (const { table, record } of changes) {
+    const needs = contentPermissions(table, record, asStored(storedRows.get(`${table}/${record.id}`)));
+    if (needs.some((permission) => !can(member, permission, record.shopId))) {
+      return res.status(403).json({ success: false, message: `Not allowed to change ${table}`, current: current(table, record.id) });
+    }
+  }
 
   const seq = await perAccount(accountId, async () => {
     const account = await Account.findOneAndUpdate(

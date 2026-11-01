@@ -1,3 +1,4 @@
+import { repaidOn, type Repayment } from "./dues";
 import { spentOn, type Expense, type Spending } from "./expense";
 import type { ItemId } from "./menu";
 import { addPaise, type Paise } from "./money";
@@ -5,7 +6,8 @@ import { billOf, counts, isLive, lineTotal, type BusinessDate, type Order, type 
 import { takings, type Takings } from "./settlement";
 
 /** A dish and how many went out, for "what sold today". */
-export type DishCount = { itemId: ItemId; name: string; quantity: number };
+/** A half and a full count apart: the kitchen prepares them apart. */
+export type DishCount = { itemId: ItemId; name: string; portion?: string; quantity: number };
 
 /**
  * One trading day, read from the records. Money signs: `left` and `drawer`
@@ -14,12 +16,14 @@ export type DishCount = { itemId: ItemId; name: string; quantity: number };
  */
 export type DayNumbers = {
   day: BusinessDate;
-  /** Money received against the day's bills, by drawer. */
+  /** The day's bills by how they were paid: cash, UPI, or on a regular's name. */
   sales: Takings;
+  /** What regulars brought back today for earlier bills: in today's drawer, not today's sales. */
+  repaid: { total: Paise; cash: Paise; upi: Paise };
   spent: Spending;
   /** Sales minus spending. */
   left: number;
-  /** What the cash box should hold from today's trading: cash in, cash out. */
+  /** What the cash box should hold from today's trading: cash in (bills and paid back), cash out. */
   drawer: number;
   /** Bills paid in full. */
   settled: number;
@@ -48,6 +52,7 @@ export function dayNumbers(
   lines: readonly OrderLine[],
   payments: readonly Payment[],
   expenses: readonly Expense[],
+  repayments: readonly Repayment[] = [],
 ): DayNumbers {
   const mine = orders.filter((o) => o.businessDate === day);
   const ids = new Set(mine.map((o) => o.id));
@@ -56,6 +61,7 @@ export function dayNumbers(
 
   const sales = takings(ownPayments.filter(counts));
   const spent = spentOn(expenses, day);
+  const repaid = repaidOn(repayments, day);
 
   const bills = mine.map((order) => ({ order, bill: billOf(order, ownLines, ownPayments) }));
   const owing = bills.filter(({ order, bill }) => order.state.status !== "settled" && (bill.due > 0 || bill.paid > 0) && bill.remaining > 0);
@@ -66,9 +72,11 @@ export function dayNumbers(
   return {
     day,
     sales,
+    repaid,
     spent,
+    // A bill on a regular's name was earned the day it was eaten.
     left: sales.total - spent.total,
-    drawer: sales.cash - spent.cash,
+    drawer: sales.cash + repaid.cash - spent.cash,
     settled: mine.filter((o) => o.state.status === "settled").length,
     // Open orders with no live dish and nothing paid owe nothing: they don't count.
     unpaid: {
@@ -85,14 +93,20 @@ export function dayNumbers(
 
 // Sent and still standing: a dish in an unsent cart hasn't sold yet.
 function topDishes(lines: readonly OrderLine[]): DishCount[] {
-  const by = new Map<ItemId, DishCount>();
+  const by = new Map<string, DishCount>();
   for (const line of lines.filter((l) => isLive(l) && l.state.status === "sent")) {
-    const known = by.get(line.itemId);
-    by.set(line.itemId, { itemId: line.itemId, name: known?.name ?? line.name, quantity: (known?.quantity ?? 0) + line.quantity });
+    const key = `${line.itemId}\u0000${line.portion ?? ""}`;
+    const known = by.get(key);
+    by.set(key, {
+      itemId: line.itemId,
+      name: known?.name ?? line.name,
+      ...(line.portion !== undefined && { portion: line.portion }),
+      quantity: (known?.quantity ?? 0) + line.quantity,
+    });
   }
   return [...by.values()].sort((a, b) => b.quantity - a.quantity || (a.name < b.name ? -1 : 1)).slice(0, TOP_DISHES);
 }
 
 /** A day with nothing in it: no bill, no expense. The screen says so instead of showing zeros. */
 export const isQuiet = (n: DayNumbers): boolean =>
-  n.sales.total === 0 && n.spent.total === 0 && n.unpaid.count === 0 && n.cancelled.dishes === 0 && n.removed.count === 0;
+  n.sales.total === 0 && n.repaid.total === 0 && n.spent.total === 0 && n.unpaid.count === 0 && n.cancelled.dishes === 0 && n.removed.count === 0;

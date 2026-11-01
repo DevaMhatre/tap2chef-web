@@ -10,8 +10,10 @@ import { SegmentedControl } from "../../design-system/SegmentedControl";
 import { Sheet } from "../../design-system/Sheet";
 import { useUndoToast } from "../../design-system/UndoToast";
 import { formatPrice, formatTime } from "../../format";
-import { METHOD_LABEL, orderTitle } from "./labels";
+import { DishLabel } from "./DishLabel";
+import { METHOD_LABEL, orderTitle, tenderLabel } from "./labels";
 import { PaymentRow } from "./PaymentRow";
+import { useCan } from "../../../usecases/usePermissions";
 
 type Props = { bill: SettledSummary | null; orders: ReadyOrders; onClose: () => void };
 
@@ -27,23 +29,26 @@ export function SettledSheet({ bill, orders, onClose }: Props) {
 }
 
 function Opened({ bill, orders, onClose }: { bill: SettledSummary; orders: ReadyOrders; onClose: () => void }) {
+  const can = useCan();
   const { state } = bill.order;
   const { payments, discount, subtotal, paid, remaining } = bill.bill;
   // Visual-only state: the methods being chosen, until Save.
+  // A bill on a regular's name is in no drawer: there is no method to correct.
+  const correctable = (p: Payment): p is Payment & { method: PaymentMethod } => counts(p) && p.method !== "later";
   const [methods, setMethods] = useState<Record<PaymentId, PaymentMethod>>(() =>
-    Object.fromEntries(payments.map((p) => [p.id, p.method])),
+    Object.fromEntries(payments.filter(correctable).map((p) => [p.id, p.method])),
   );
   const [failure, setFailure] = useState<string>();
   const saving = useRef(false);
   const showUndo = useUndoToast();
-  const changed = payments.filter((p) => counts(p) && methods[p.id] !== p.method);
+  const changed = payments.filter(correctable).filter((p) => methods[p.id] !== p.method);
 
   async function remove(payment: Payment) {
     try {
       const result = await orders.removePayment(payment.id);
       if (!result.ok) return;
       haptic();
-      showUndo(`${METHOD_LABEL[payment.method]} ${formatPrice(payment.amount)} removed`, result.value);
+      showUndo(`${tenderLabel(payment)} ${formatPrice(payment.amount)} removed`, result.value);
     } catch {
       setFailure("Couldn't save on this device. Try again.");
     }
@@ -113,15 +118,15 @@ function Opened({ bill, orders, onClose }: { bill: SettledSummary; orders: Ready
             footer={remaining < 0 ? undefined : "Got the method wrong? Change it here; the amount stays."}
           >
             {payments.map((p) => (
-              <PaymentRow key={p.id} payment={p}>
+              <PaymentRow key={p.id} payment={p} methodShown={remaining >= 0 && correctable(p) && can("payments.correct")}>
                 {/* An excess is fixed first: Remove. Otherwise only the method can change. */}
                 {remaining < 0
-                  ? orders.canRemove(bill, p) && (
+                  ? orders.canRemove(bill, p) && can("payments.remove") && (
                       <Button variant="plain" size="compact" className="-mr-3" onClick={() => remove(p)}>
                         Remove
                       </Button>
                     )
-                  : counts(p) && (
+                  : correctable(p) && can("payments.correct") && (
                       <div className="w-40 shrink-0">
                         <SegmentedControl
                           label={`${formatPrice(p.amount)} paid by`}
@@ -140,7 +145,7 @@ function Opened({ bill, orders, onClose }: { bill: SettledSummary; orders: Ready
           {lines.map((line) => (
             <div key={line.id} className="flex min-h-11 items-center gap-3 px-4 py-2 text-[17px]">
               <span className="w-8 shrink-0 text-[15px] text-muted tabular-nums">{line.quantity}×</span>
-              <span className="min-w-0 flex-1 truncate">{line.name}</span>
+              <DishLabel line={line} className="flex-1" />
               <span className="tabular-nums">{formatPrice(lineTotal(line))}</span>
             </div>
           ))}

@@ -72,7 +72,7 @@ describe("useOrders", () => {
       ["b", 22000, 1],
       ["a", 22000, 1],
     ]);
-    expect(orders.takings).toEqual({ total: 44000, cash: 27000, upi: 17000 });
+    expect(orders.takings).toEqual({ total: 44000, cash: 27000, upi: 17000, later: 0 });
     expect(orders.today).toEqual([]);
   });
 
@@ -83,7 +83,7 @@ describe("useOrders", () => {
       expect(await ready(result.current).correctPayment("pa" as PaymentId, "upi")).toEqual({ ok: true, value: undefined });
     });
     const orders = ready(result.current);
-    expect(orders.takings).toEqual({ total: 44000, cash: 5000, upi: 39000 });
+    expect(orders.takings).toEqual({ total: 44000, cash: 5000, upi: 39000, later: 0 });
     expect(orders.settled.find((s) => s.order.id === "a")!.bill.payments[0]!.correctedAt).toBeDefined();
   });
 

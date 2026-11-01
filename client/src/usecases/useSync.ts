@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import type { Refused } from "./ports";
 import { usePorts } from "./PortsProvider";
 
 /** How often a signed-in device on screen asks for others' changes. */
@@ -70,4 +71,12 @@ export function useSync(signedIn: boolean): Kept {
   }, [active, waiting]);
 
   return signedIn && inStep && waiting === 0 ? "online" : "device";
+}
+
+/** Changes the account refused from this phone, until someone has seen them. */
+export function useRefusedChanges(): { refused: Refused[]; dismiss: () => Promise<void> } {
+  const { sync } = usePorts();
+  const [refused, setRefused] = useState<Refused[]>([]);
+  useEffect(() => sync.subscribeRefused(setRefused), [sync]);
+  return { refused, dismiss: () => sync.dismissRefused() };
 }

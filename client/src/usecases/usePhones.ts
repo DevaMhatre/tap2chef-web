@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { MANAGES_ANSWER, type PhonePerson } from "../domain/access";
+import { normalizeName } from "../domain/menu";
 import { ownerFirst, type Phone } from "../domain/phones";
 import { isOwnerPhone } from "../domain/signIn";
 import type { PhonesError } from "./ports";
@@ -65,31 +67,50 @@ export function useRemovePhone(): (id: string) => Promise<boolean> {
 }
 
 export type AddPhone =
+  /** Who the phone is for, first: it joins as them. */
+  | {
+      state: "who";
+      name: string;
+      /** "Can they handle money and the menu when you're away?" Unanswered: null. */
+      manages: boolean | null;
+      problem?: "noName" | "nameTooLong" | "noAnswer";
+      typeName(text: string): void;
+      /** Chooses only; `showCode` commits. */
+      answer(manages: boolean): void;
+      showCode(): void;
+    }
   | { state: "loading" }
   | { state: "unavailable"; problem: PhonesError }
   /** Show the code (and its link as a QR) until a phone joins; a new one comes when it expires. */
-  | { state: "showing"; code: string; expiresAt: number }
-  | { state: "joined"; label: string };
+  | { state: "showing"; person: string; code: string; expiresAt: number }
+  | { state: "joined"; person: string; label: string };
 
-/** The owner's phone shows a code; the moment a new phone joins with it, says so. */
+export const PERSON_NAME_MAX = 40;
+
+/** The owner says who the new phone is for, shows a code, and hears the moment it joins. */
 export function useAddPhone(): AddPhone {
   const { phones: service, clock } = usePorts();
-  const [shown, setShown] = useState<AddPhone>({ state: "loading" });
+  const [name, setName] = useState("");
+  const [manages, setManages] = useState<boolean | null>(null);
+  const [problem, setProblem] = useState<"noName" | "nameTooLong" | "noAnswer">();
+  const [person, setPerson] = useState<PhonePerson>();
+  const [shown, setShown] = useState<Exclude<AddPhone, { state: "who" }>>({ state: "loading" });
   const known = useRef<Set<string>>(undefined);
 
   const fetchCode = useCallback(
-    (signal: AbortSignal) =>
+    (who: PhonePerson, signal: AbortSignal) =>
       service
-        .linkCode(signal)
+        .linkCode(who, signal)
         .then((result) => {
           if (signal.aborted) return;
-          setShown(result.ok ? { state: "showing", ...result.value } : { state: "unavailable", problem: result.error });
+          setShown(result.ok ? { state: "showing", person: who.name, ...result.value } : { state: "unavailable", problem: result.error });
         })
         .catch(unlessAborted(signal)),
     [service],
   );
 
   useEffect(() => {
+    if (!person) return;
     const controller = new AbortController();
     void service
       .list(controller.signal)
@@ -97,18 +118,18 @@ export function useAddPhone(): AddPhone {
         if (!controller.signal.aborted && result.ok) known.current = new Set(result.value.map((p) => p.id));
       })
       .catch(unlessAborted(controller.signal));
-    void fetchCode(controller.signal);
+    void fetchCode(person, controller.signal);
     return () => controller.abort();
-  }, [service, fetchCode]);
+  }, [person, service, fetchCode]);
 
   // While the code shows: watch for the new phone, and replace a code that ran out.
   const showing = shown.state === "showing" ? shown : undefined;
   useEffect(() => {
-    if (!showing) return;
+    if (!showing || !person) return;
     const controller = new AbortController();
     const timer = setInterval(() => {
       if (clock.now() >= showing.expiresAt) {
-        void fetchCode(controller.signal);
+        void fetchCode(person, controller.signal);
         return;
       }
       void service
@@ -116,7 +137,7 @@ export function useAddPhone(): AddPhone {
         .then((result) => {
           if (controller.signal.aborted || !result.ok || !known.current) return;
           const fresh = result.value.find((p) => p.kind === "linked" && !known.current!.has(p.id));
-          if (fresh) setShown({ state: "joined", label: fresh.label });
+          if (fresh) setShown({ state: "joined", person: person.name, label: fresh.label });
         })
         .catch(unlessAborted(controller.signal));
     }, PHONES_POLL_MS);
@@ -124,7 +145,30 @@ export function useAddPhone(): AddPhone {
       clearInterval(timer);
       controller.abort();
     };
-  }, [showing, clock, service, fetchCode]);
+  }, [showing, person, clock, service, fetchCode]);
 
+  if (!person) {
+    return {
+      state: "who",
+      name,
+      manages,
+      problem,
+      typeName(text) {
+        setName(text);
+        setProblem(undefined);
+      },
+      answer(value) {
+        setManages(value);
+        setProblem(undefined);
+      },
+      showCode() {
+        const typed = normalizeName(name);
+        if (typed === "") return setProblem("noName");
+        if (typed.length > PERSON_NAME_MAX) return setProblem("nameTooLong");
+        if (manages === null) return setProblem("noAnswer");
+        setPerson({ name: typed, roleId: manages ? MANAGES_ANSWER.yes : MANAGES_ANSWER.no });
+      },
+    };
+  }
   return shown;
 }

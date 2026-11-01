@@ -100,6 +100,42 @@ describe("dexieOrderRepository", () => {
     expect((await db.orders.get(order.id))!.state).toEqual({ status: "open" });
   });
 
+  it("keeps who cancelled a dish and who took the money", async () => {
+    const voided: OrderLine = { ...line, state: { status: "voided", roundId: "r1" as RoundId, sentAt: 120, voidedAt: 130, reason: "wrongEntry", by: "Ravi" } };
+    const payment: Payment = { id: "p9" as PaymentId, orderId: order.id, amount: paise(1500), receivedAt: 160, method: "cash", by: "Ravi" };
+    await dexieOrderRepository.write([
+      { op: "put", table: "orders", record: order },
+      { op: "put", table: "lines", record: voided },
+      { op: "put", table: "payments", record: payment },
+    ]);
+    const snapshot = await next(TODAY, (s) => s.payments.length > 0 && s.lines.length > 0);
+    expect(snapshot.lines[0]!.state).toMatchObject({ by: "Ravi" });
+    expect(snapshot.payments[0]).toMatchObject({ by: "Ravi" });
+  });
+
+  it("keeps a line's portion, and a line without one has none", async () => {
+    const half: OrderLine = { ...line, id: "l2" as LineId, portion: "Half" };
+    await dexieOrderRepository.write([
+      { op: "put", table: "orders", record: order },
+      { op: "put", table: "lines", record: half },
+      { op: "put", table: "lines", record: line },
+    ]);
+    const s = await next(TODAY, (s) => s.lines.length === 2);
+    expect(s.lines.find((l) => l.id === "l2")).toEqual(half);
+    expect(s.lines.find((l) => l.id === "l1")).not.toHaveProperty("portion");
+  });
+
+  it("keeps whose name and number a bill went on, and skips one without", async () => {
+    const later = { id: "p8" as PaymentId, orderId: order.id, amount: paise(1500), receivedAt: 160, method: "later", customer: "Sharma ji", phone: "9876543210" } as Payment;
+    await dexieOrderRepository.write([
+      { op: "put", table: "orders", record: order },
+      { op: "put", table: "payments", record: later },
+    ]);
+    await db.payments.put({ id: "p9", accountId: "a", createdAt: 1, updatedAt: 1, deleted: false, orderId: order.id, amount: 100, receivedAt: 1, method: "later", customer: "Ravi" });
+    const snapshot = await next(TODAY, (s) => s.payments.length > 0);
+    expect(snapshot.payments).toEqual([later]);
+  });
+
   it("skips malformed payments from sync", async () => {
     const meta = { accountId: "t", shopId: "t", createdAt: 1, updatedAt: 1, deleted: false };
     await dexieOrderRepository.write([{ op: "put", table: "orders", record: order }]);

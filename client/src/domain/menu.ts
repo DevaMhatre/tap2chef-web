@@ -10,17 +10,44 @@ export type ItemId = Id<"ItemId">;
 
 export type Diet = "veg" | "nonVeg" | "egg";
 
-// One arm today. Half/Full portions, if needed, become a new arm here; stored
-// items and existing screens are unaffected.
-export type Pricing = { kind: "fixed"; price: Paise };
+/** "Half", "Full". Named, not an enum, so a quarter or a large later needs no new shape. */
+export type Portion = { name: string; price: Paise };
 
-/** What one unit costs. A future portions arm answers per portion. */
-export function unitPrice(pricing: Pricing): Paise {
+export type Pricing =
+  | { kind: "fixed"; price: Paise }
+  // Smallest first. Today always Half, then Full.
+  | { kind: "portions"; portions: Portion[] };
+
+export const HALF = "Half";
+export const FULL = "Full";
+
+/** One way to order a dish: the dish itself, or one of its portions. */
+export type Choice = { portion?: string; price: Paise };
+
+/** Every way a dish can be ordered from one list, in menu order. */
+export function choicesOf(pricing: Pricing): Choice[] {
   switch (pricing.kind) {
     case "fixed":
-      return pricing.price;
+      return [{ price: pricing.price }];
+    case "portions":
+      return pricing.portions.map((p) => ({ portion: p.name, price: p.price }));
   }
 }
+
+/** What one unit costs, or undefined if the dish has no such portion (any more). */
+export function priceOf(pricing: Pricing, portion: string | undefined): Paise | undefined {
+  return choicesOf(pricing).find((c) => c.portion === portion)?.price;
+}
+
+/** The price a menu row leads with: the dish's, or its largest portion's. */
+export function mainPrice(pricing: Pricing): Paise {
+  return choicesOf(pricing).at(-1)!.price;
+}
+
+export const samePricing = (a: Pricing, b: Pricing): boolean => {
+  const [x, y] = [choicesOf(a), choicesOf(b)];
+  return x.length === y.length && x.every((c, i) => c.portion === y[i]!.portion && c.price === y[i]!.price);
+};
 
 /** A price list chosen per order, e.g. "Dine-In" or "Takeaway". */
 export type MenuProfile = { id: ProfileId; name: string; sortKey: string };
@@ -74,13 +101,17 @@ export type ItemDraft = {
   name: string;
   categoryId: CategoryId | null;
   diet: Diet | null;
-  /** A missing profile means not sold there; "" means the price is still to fill in. */
+  /** A missing profile means not sold there; "" means the price is still to fill in. Full price when sold half too. */
   prices: Partial<Record<ProfileId, string>>;
+  /** Half prices per profile, when the dish is also sold half; null when it's sold one way. */
+  halves: Partial<Record<ProfileId, string>> | null;
 };
 
 export type ItemFields = Omit<MenuItem, "id" | "sortKey">;
 
 export type PriceError = "required" | "invalid" | "tooHigh";
+/** `notLess`: a half at or above the full price is the two typed the wrong way round. */
+export type HalfError = PriceError | "notLess";
 
 export type ItemDraftErrors = {
   name?: NameError;
@@ -89,6 +120,7 @@ export type ItemDraftErrors = {
   /** The item is switched off in every profile. */
   profiles?: "noneSelected";
   prices?: Partial<Record<ProfileId, PriceError>>;
+  halves?: Partial<Record<ProfileId, HalfError>>;
 };
 
 export function validatePrice(text: string): Result<Paise, PriceError> {
@@ -109,16 +141,33 @@ export function validateItemDraft(draft: ItemDraft): Result<ItemFields, ItemDraf
 
   const prices: Partial<Record<ProfileId, Pricing>> = {};
   const priceErrors: Partial<Record<ProfileId, PriceError>> = {};
+  const halfErrors: Partial<Record<ProfileId, HalfError>> = {};
   let soldSomewhere = false;
   for (const [profileId, text] of Object.entries(draft.prices) as [ProfileId, string | undefined][]) {
     if (text === undefined) continue;
     soldSomewhere = true;
-    const price = validatePrice(text);
-    if (price.ok) prices[profileId] = { kind: "fixed", price: price.value };
-    else priceErrors[profileId] = price.error;
+    const full = validatePrice(text);
+    if (!full.ok) priceErrors[profileId] = full.error;
+    if (draft.halves === null) {
+      if (full.ok) prices[profileId] = { kind: "fixed", price: full.value };
+      continue;
+    }
+    const half = validatePrice(draft.halves[profileId] ?? "");
+    if (!half.ok) halfErrors[profileId] = half.error;
+    else if (full.ok && half.value >= full.value) halfErrors[profileId] = "notLess";
+    else if (full.ok) {
+      prices[profileId] = {
+        kind: "portions",
+        portions: [
+          { name: HALF, price: half.value },
+          { name: FULL, price: full.value },
+        ],
+      };
+    }
   }
   if (!soldSomewhere) errors.profiles = "noneSelected";
   if (Object.keys(priceErrors).length > 0) errors.prices = priceErrors;
+  if (Object.keys(halfErrors).length > 0) errors.halves = halfErrors;
 
   if (!name.ok || draft.categoryId === null || draft.diet === null || Object.keys(errors).length > 0) {
     return err(errors);
@@ -128,19 +177,30 @@ export function validateItemDraft(draft: ItemDraft): Result<ItemFields, ItemDraf
 
 /** The edit form for an existing item: prices back to rupee text. */
 export function itemToDraft(item: MenuItem): ItemDraft {
+  const sold = Object.entries(item.prices).flatMap(([id, pricing]) => (pricing ? [[id, pricing] as const] : []));
+  const halved = sold.some(([, p]) => p.kind === "portions");
   return {
     name: item.name,
     categoryId: item.categoryId,
     diet: item.diet,
-    prices: Object.fromEntries(
-      Object.entries(item.prices).flatMap(([id, pricing]) => (pricing ? [[id, toRupeeText(pricing.price)]] : [])),
-    ),
+    prices: Object.fromEntries(sold.map(([id, p]) => [id, toRupeeText(mainPrice(p))])),
+    halves: halved
+      ? Object.fromEntries(sold.map(([id, p]) => [id, p.kind === "portions" ? toRupeeText(p.portions[0]!.price) : ""]))
+      : null,
   };
 }
 
-/** Quick add has one price field; it applies to every profile the draft offers. */
-export function withPriceEverywhere(draft: ItemDraft, text: string): ItemDraft {
-  return { ...draft, prices: Object.fromEntries(Object.keys(draft.prices).map((id) => [id, text])) };
+/**
+ * Quick add has one price field (and one half price); each applies to every
+ * profile the draft offers. A null half means the dish is sold one way.
+ */
+export function withPriceEverywhere(draft: ItemDraft, text: string, half: string | null = null): ItemDraft {
+  const ids = Object.keys(draft.prices);
+  return {
+    ...draft,
+    prices: Object.fromEntries(ids.map((id) => [id, text])),
+    halves: half === null ? null : Object.fromEntries(ids.map((id) => [id, half])),
+  };
 }
 
 // ---------------------------------------------------------------- shop overrides

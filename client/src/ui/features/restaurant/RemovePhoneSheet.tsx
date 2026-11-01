@@ -33,7 +33,7 @@ export function RemovePhoneSheet({
               }
             }}
           >
-            Remove {phone.label}
+            Remove {phone.person ? `${phone.person}’s Phone` : phone.label}
           </Button>
         </div>
       )}

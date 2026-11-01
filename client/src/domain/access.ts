@@ -41,6 +41,8 @@ export const PERMISSIONS = [
   "expenses.note",
   /** "Make it ₹850". */
   "bills.discount",
+  /** Put a regular's bill on their name, and take the money back later. */
+  "payments.later",
   /** Change a payment's method (cash turned UPI). */
   "payments.correct",
   /** Take a wrong payment off a bill. */
@@ -70,9 +72,11 @@ const STAFF: readonly Permission[] = [
   "expenses.note",
 ];
 
+// No discounts: at the first restaurant only the owner gives one (2026-10-30).
+// Pay later is a manager's call: the owner isn't free to do it all (2026-11-01).
 const MANAGER: readonly Permission[] = [
   ...STAFF,
-  "bills.discount",
+  "payments.later",
   "payments.correct",
   "payments.remove",
   "expenses.remove",
@@ -84,8 +88,8 @@ const MANAGER: readonly Permission[] = [
 /**
  * The three bundles every account starts with. Data, not code: staff run the
  * service and every slip they make stays visible; money taken back, the menu
- * and the day's takings need a manager; only the owner manages people,
- * devices, shops and the plan.
+ * and the day's takings need a manager; discounts and managing people,
+ * devices, shops and the plan are the owner's alone.
  */
 export const PRESET_ROLES: readonly Role[] = [
   { id: "owner" as RoleId, name: "Owner", permissions: PERMISSIONS },
@@ -137,3 +141,20 @@ export function readPin(text: string): Result<Pin, PinError> {
   if (steps.every((s) => s === steps[0]) && Math.abs(steps[0]!) <= 1) return err("tooEasy");
   return ok(text as Pin);
 }
+
+// ---------------------------------------------------------------- this phone
+
+/** Who a phone works as: the owner, or the person it was added for. */
+export type PhonePerson = { name: string; roleId: RoleId };
+
+/**
+ * Whether this phone may do something. A phone that isn't signed in, or is
+ * signed in with the owner's email, is the owner's: it may do everything. A
+ * linked phone may do what its person's role allows.
+ */
+export function phoneCan(person: PhonePerson | undefined, permission: Permission, roles: readonly Role[] = PRESET_ROLES): boolean {
+  if (!person) return true;
+  return roles.find((r) => r.id === person.roleId)?.permissions.includes(permission) ?? false;
+}
+
+export const MANAGES_ANSWER = { yes: "manager" as RoleId, no: "staff" as RoleId };

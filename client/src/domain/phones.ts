@@ -3,8 +3,10 @@
 
 export type Phone = {
   id: string;
-  /** "Android phone", "iPhone": what kind of device, since people come later. */
+  /** "Android phone", "iPhone": what kind of device. */
   label: string;
+  /** Who it was added for ("Ravi"); missing on the owner's phone and on one linked before people existed. */
+  person?: string;
   /** Signed in with the owner's email, or joined with a code. */
   kind: "owner" | "linked";
   lastSeenAt: number;

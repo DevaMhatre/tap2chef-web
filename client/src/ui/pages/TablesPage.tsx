@@ -6,22 +6,29 @@ import { EditTablesSheet } from "../features/tables/EditTablesSheet";
 import { TableGrid } from "../features/tables/TableGrid";
 import { TableSetup } from "../features/tables/TableSetup";
 import { formatPrice } from "../format";
+import { useCan } from "../../usecases/usePermissions";
 
 export default function TablesPage() {
   const tables = useTables();
   const [editing, setEditing] = useState(false);
+  const can = useCan();
 
   if (tables.state === "loading") return <PageHeader title="Tables" />;
-  if (tables.state === "empty") return <TableSetup {...tables} />;
+  if (tables.state === "empty") {
+    if (!can("tables.edit")) return <PageHeader title="Tables" />;
+    return <TableSetup {...tables} />;
+  }
 
   return (
     <section className="mx-auto max-w-5xl">
       <PageHeader
         title="Tables"
         actions={
-          <Button variant="plain" onClick={() => setEditing(true)}>
-            Edit
-          </Button>
+          can("tables.edit") && (
+            <Button variant="plain" onClick={() => setEditing(true)}>
+              Edit
+            </Button>
+          )
         }
       />
       {/* The cashier's rush-hour radar: money handed a bill and not yet in. */}

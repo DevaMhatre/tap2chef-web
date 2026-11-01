@@ -1,6 +1,6 @@
 import { liveQuery } from "dexie";
 import { err, ok } from "../../domain/result";
-import type { SyncService } from "../../usecases/ports";
+import type { Refused, SyncService } from "../../usecases/ports";
 import { db, type OutboxRow, type StoredRecord } from "../db/db";
 import { clearRestaurant, CURSOR_KEY, deviceToken, forgetSession, renewToken, syncCursor } from "../db/deviceSession";
 import { getScope, type Scope } from "../db/repo";
@@ -63,8 +63,8 @@ async function pushOnce(token: string, scope: Scope, signal?: AbortSignal): Prom
       for (const { entry, change } of sendable) {
         const alone = await post([change], token, signal);
         if (removed(alone)) return "removed";
-        if (!alone || alone.status === 401 || alone.status >= 500) return alone?.status === 401 ? "signedOut" : "failed";
-        if (alone.status !== 200) console.warn(`Sync refused ${entry.table} ${entry.recordId}:`, alone.body.message);
+        if (!alone || alone.status === 401 || alone.status === 429 || alone.status >= 500) return alone?.status === 401 ? "signedOut" : "failed";
+        if (alone.status !== 200) await noteRefused(entry, alone.body, scope);
         await db.outbox.bulkDelete(covered(entry).map((e) => e.seq!));
       }
       return "more";
@@ -73,6 +73,35 @@ async function pushOnce(token: string, scope: Scope, signal?: AbortSignal): Prom
   // Entries for rows that no longer exist go too, with everything sent.
   await db.outbox.bulkDelete(picked.flatMap(covered).map((e) => e.seq!));
   return "more";
+}
+
+const REFUSED_KEY = "refusedChanges";
+
+const readRefused = async (): Promise<Refused[]> => {
+  try {
+    const value = JSON.parse((await db.meta.get(REFUSED_KEY))?.value ?? "[]");
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Keeps a refused change in sight, and puts back what the account holds for
+ * that record (or takes away one it never had), so the screen never keeps
+ * showing a change that didn't count.
+ */
+async function noteRefused(entry: OutboxRow, body: Record<string, unknown>, scope: Scope) {
+  console.warn(`Sync refused ${entry.table} ${entry.recordId}:`, body.message);
+  const held = body.current === null ? null : fromWire({ table: entry.table, seq: 0, record: body.current }, scope);
+  await db.transaction("rw", [db.meta, db[entry.table]], async () => {
+    const refused = await readRefused();
+    refused.push({ table: entry.table, recordId: entry.recordId, at: Date.now() });
+    await db.meta.put({ key: REFUSED_KEY, value: JSON.stringify(refused) });
+    // An older server says nothing of what it holds: leave ours, shown as not saved.
+    if (body.current === null) await db[entry.table].delete(entry.recordId);
+    else if (held) await db[entry.table].put(held.row);
+  });
 }
 
 /** Applies everyone's changes since the cursor; a record with a change of ours still waiting keeps ours. */
@@ -123,6 +152,15 @@ export const httpSync: SyncService = {
 
   subscribeWaiting(onChange) {
     return subscribeCount(() => db.outbox.count(), onChange);
+  },
+
+  subscribeRefused(onChange) {
+    const subscription = liveQuery(readRefused).subscribe({ next: onChange, error: (error) => console.error(error) });
+    return () => subscription.unsubscribe();
+  },
+
+  async dismissRefused() {
+    await db.meta.delete(REFUSED_KEY);
   },
 };
 

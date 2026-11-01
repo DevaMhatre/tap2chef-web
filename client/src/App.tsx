@@ -2,10 +2,14 @@ import type { ReactNode } from "react";
 import { BrowserRouter, Navigate, Route, Routes } from "react-router";
 import { PortsProvider } from "./usecases/PortsProvider";
 import { ShopProvider } from "./usecases/ShopProvider";
+import type { Permission } from "./domain/access";
+import { useCan } from "./usecases/usePermissions";
 import { useShowsTables } from "./usecases/useRestaurant";
 import type { Ports } from "./usecases/ports";
 import { dexieMenuRepository } from "./infrastructure/db/dexieMenuRepository";
 import { dexieDayRepository } from "./infrastructure/db/dexieDayRepository";
+import { dexieDuesRepository } from "./infrastructure/db/dexieDuesRepository";
+import { printDialogKitchen } from "./infrastructure/printing/kitchenPrinter";
 import { dexieDrawerRepository } from "./infrastructure/db/dexieDrawerRepository";
 import { dexieExpenseRepository } from "./infrastructure/db/dexieExpenseRepository";
 import { dexieOrderRepository } from "./infrastructure/db/dexieOrderRepository";
@@ -26,6 +30,7 @@ import MenuPage from "./ui/pages/MenuPage";
 import OrderPage from "./ui/pages/OrderPage";
 import OrdersPage from "./ui/pages/OrdersPage";
 import SettledPage from "./ui/pages/SettledPage";
+import DuesPage from "./ui/pages/DuesPage";
 import TablesPage from "./ui/pages/TablesPage";
 import Today from "./ui/pages/Today";
 
@@ -39,6 +44,8 @@ const ports: Ports = {
   orders: dexieOrderRepository,
   expenses: dexieExpenseRepository,
   days: dexieDayRepository,
+  dues: dexieDuesRepository,
+  kitchen: printDialogKitchen,
   drawer: dexieDrawerRepository,
   account: httpAccountService,
   phones: httpPhonesService,
@@ -63,11 +70,12 @@ export default function App() {
               <Route path="tables" element={<NoTables fallback={<TablesPage />} />} />
               <Route path="tables/:tableId" element={<OrderPage />} />
               <Route path="orders" element={<OrdersPage />} />
-              <Route path="orders/settled" element={<SettledPage />} />
+              <Route path="orders/settled" element={<Needs permission="day.view" page={<SettledPage />} />} />
+              <Route path="orders/later" element={<Needs permission="payments.later" page={<DuesPage />} />} />
               <Route path="orders/:orderId" element={<OrderPage />} />
-              <Route path="menu" element={<MenuPage />} />
+              <Route path="menu" element={<Needs permission="menu.edit" page={<MenuPage />} />} />
               <Route path="expenses" element={<ExpensesPage />} />
-              <Route path="today" element={<Today />} />
+              <Route path="today" element={<Needs permission="day.view" page={<Today />} />} />
               <Route path="*" element={<Home />} />
             </Route>
           </Routes>
@@ -89,4 +97,9 @@ function Home() {
 /** A kitchen with no tables never lands on an empty floor, whatever link it followed. */
 function NoTables({ fallback }: { fallback: ReactNode }) {
   return useShowsTables() === false ? <Navigate to="/orders" replace /> : fallback;
+}
+
+/** A page this phone may not use (an old link, a typed address) sends it home. */
+function Needs({ permission, page }: { permission: Permission; page: ReactNode }) {
+  return useCan()(permission) ? page : <Home />;
 }

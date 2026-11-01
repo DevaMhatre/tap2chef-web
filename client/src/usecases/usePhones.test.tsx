@@ -69,7 +69,16 @@ describe("useAddPhone", () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const { list, time, wrapper } = await setup();
     const { result } = renderHook(() => useAddPhone(), { wrapper });
-    await waitFor(() => expect(result.current).toMatchObject({ state: "showing", code: "100001" }));
+    const who = () => result.current as Extract<ReturnType<typeof useAddPhone>, { state: "who" }>;
+    act(() => who().showCode());
+    expect(who().problem).toBe("noName");
+    act(() => who().typeName("  Ravi "));
+    act(() => who().showCode());
+    expect(who().problem).toBe("noAnswer");
+    act(() => who().answer(false));
+    act(() => who().showCode());
+    await waitFor(() => expect(result.current).toMatchObject({ state: "showing", person: "Ravi", code: "100001" }));
+    expect(list.state.people).toEqual([{ name: "Ravi", roleId: "staff" }]);
 
     // Ten minutes pass with nobody joining: a fresh code.
     time.advance(10 * 60 * 1000);
@@ -78,7 +87,9 @@ describe("useAddPhone", () => {
 
     list.state.phones.push(phone("waiter", { label: "Android phone" }));
     await act(() => vi.advanceTimersByTimeAsync(PHONES_POLL_MS));
-    await waitFor(() => expect(result.current).toEqual({ state: "joined", label: "Android phone" }));
+    await waitFor(() => expect(result.current).toEqual({ state: "joined", person: "Ravi", label: "Android phone" }));
+    // A fresh code is for the same person.
+    expect(list.state.people).toEqual([{ name: "Ravi", roleId: "staff" }, { name: "Ravi", roleId: "staff" }]);
   });
 });
 

@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import type { Kot } from "../../domain/kot";
+import { kotBytes, kotPage } from "./kitchenPrinter";
 import { receipt, testKot } from "./escpos";
 import { BLE_CHUNK, writeChunks } from "./printerCheck";
 
@@ -35,5 +37,26 @@ describe("writing to a Bluetooth printer", () => {
     await writeChunks(characteristic, bytes);
     expect(sent.map((c) => c.length)).toEqual([BLE_CHUNK, BLE_CHUNK, 5]);
     expect(sent.flat()).toEqual([...bytes]);
+  });
+});
+
+describe("the KOT, for a printer", () => {
+  const kot: Kot = { title: "Table 4", kind: "round", round: 1, at: new Date(2026, 10, 1, 13, 42).getTime(), lines: [{ quantity: 2, name: "Biryani <Special>", portion: "Half" }] };
+
+  it("is a page the size of a 58 mm roll, with names escaped and HALF in capitals", () => {
+    const page = kotPage(kot);
+    expect(page).toContain("size: 58mm auto");
+    expect(page).toContain("<h1>Table 4</h1>");
+    expect(page).toContain("2 x Biryani &lt;Special&gt; HALF");
+    expect(page).not.toContain("<Special>");
+  });
+
+  it("is ESC/POS bytes: reset, the title, the lines, then the paper fed out", () => {
+    const bytes = kotBytes(kot);
+    expect([...bytes.slice(0, 2)]).toEqual([0x1b, 0x40]);
+    const text = String.fromCharCode(...bytes);
+    expect(text).toContain("Table 4");
+    expect(text).toContain("2 x Biryani <Special> HALF");
+    expect([...bytes.slice(-3)]).toEqual([0x1d, 0x56, 0x01]);
   });
 });

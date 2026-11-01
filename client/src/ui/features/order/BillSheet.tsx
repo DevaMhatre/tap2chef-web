@@ -1,7 +1,9 @@
 import { useRef, useState } from "react";
 import { toRupeeText, type Paise } from "../../../domain/money";
 import { counts, dishCount, type Payment } from "../../../domain/order";
-import type { BillInput, PaymentMethod } from "../../../domain/settlement";
+import { nameKey, owedBy, type Regular } from "../../../domain/dues";
+import { readPhone, type BillInput, type TenderMethod } from "../../../domain/settlement";
+import { useDues } from "../../../usecases/useDues";
 import type { Undo } from "../../../usecases/orderDesk";
 import type { ReadyOrder } from "../../../usecases/useOrder";
 import { Button } from "../../design-system/Button";
@@ -11,9 +13,10 @@ import { haptic } from "../../design-system/haptic";
 import { SegmentedControl } from "../../design-system/SegmentedControl";
 import { Sheet } from "../../design-system/Sheet";
 import { useUndoToast } from "../../design-system/UndoToast";
-import { formatPrice } from "../../format";
-import { METHOD_LABEL, orderTitle } from "./labels";
+import { formatPhone, formatPrice } from "../../format";
+import { orderTitle, paidByLabel, TENDER_LABEL, tenderLabel } from "./labels";
 import { PaymentRow } from "./PaymentRow";
+import { useCan } from "../../../usecases/usePermissions";
 
 type Props = {
   open: boolean;
@@ -34,9 +37,10 @@ export function BillSheet({ open, screen, onClose, onSettled }: Props) {
 }
 
 
-const METHODS: { value: PaymentMethod; label: string }[] = [
-  { value: "cash", label: METHOD_LABEL.cash },
-  { value: "upi", label: METHOD_LABEL.upi },
+const METHODS: { value: TenderMethod; label: string }[] = [
+  { value: "cash", label: TENDER_LABEL.cash },
+  { value: "upi", label: TENDER_LABEL.upi },
+  { value: "later", label: TENDER_LABEL.later },
 ];
 
 export type Settled = { paid: Paise; method: string; change: Paise; undo: Undo };
@@ -44,18 +48,21 @@ export type Settled = { paid: Paise; method: string; change: Paise; undo: Undo }
 function BillForm({ screen, onSettled, onClose }: Omit<Props, "open">) {
   // Visual-only state: what has been typed, which parts are showing.
   const [input, setInput] = useState<BillInput>(screen.billInput);
-  const [adjusting, setAdjusting] = useState(screen.billInput.finalAmount !== "");
+  const can = useCan();
+  // An agreed discount opens for editing only where discounts can be given.
+  const [adjusting, setAdjusting] = useState(screen.billInput.finalAmount !== "" && can("bills.discount"));
   const [failure, setFailure] = useState<string>();
   const busy = useRef(false);
   const showUndo = useUndoToast();
 
   const quote = screen.quote(input);
-  const { subtotal, due, paid, remaining, discount, receipt, settles } = quote;
+  const { subtotal, due, paid, remaining, discount, receipt, tender, settles } = quote;
+  const dues = useDues();
   const { payments } = screen.bill;
   const edit = (patch: Partial<BillInput>) => setInput((current) => ({ ...current, ...patch }));
   // Choosing a method fills in what is left: the usual case is one tap away
   // from Settle, and a part payment is one edit away.
-  const choose = (method: PaymentMethod) =>
+  const choose = (method: TenderMethod) =>
     edit({ method, received: input.received === "" && remaining > 0 ? toRupeeText(remaining as Paise) : input.received });
 
   const amountError = !discount.ok ? DISCOUNT_ERRORS[discount.error]?.(subtotal, paid) : undefined;
@@ -75,18 +82,19 @@ function BillForm({ screen, onSettled, onClose }: Omit<Props, "open">) {
         }
         return explain(result.error);
       }
-      const method = input.method!;
+      const how = tender!.ok ? tender!.value : ({ method: "cash" } as const);
       const result = await screen.receive(input);
       if (!result.ok) return explain(result.error);
       const { settled, undo, change } = result.value;
       if (settled) {
-        const methods = new Set([...payments.map((p) => p.method), method]);
-        return onSettled({ paid: due, method: methods.size > 1 ? "Cash + UPI" : METHOD_LABEL[method], change, undo });
+        const all = [...payments.filter(counts), how];
+        return onSettled({ paid: due, method: all.every((p) => p.method === how.method) ? tenderLabel(how) : paidByLabel(all), change, undo });
       }
       // A part: the sheet stays, ready for the rest.
       haptic();
-      showUndo(`${METHOD_LABEL[method]} ${formatPrice(receipt!.ok ? receipt!.value.amount : (0 as Paise))} received`, undo);
-      setInput((current) => ({ ...current, method: null, received: "" }));
+      const amount = formatPrice(receipt!.ok ? receipt!.value.amount : (0 as Paise));
+      showUndo(how.method === "later" ? `${amount} on ${how.customer}` : `${tenderLabel(how)} ${amount} received`, undo);
+      setInput((current) => ({ ...current, method: null, received: "", customer: "" }));
     } catch {
       setFailure("Couldn't save on this device. Try again.");
     } finally {
@@ -100,7 +108,7 @@ function BillForm({ screen, onSettled, onClose }: Omit<Props, "open">) {
       const result = await screen.removePayment(payment.id);
       if (!result.ok) return;
       haptic();
-      showUndo(`${METHOD_LABEL[payment.method]} ${formatPrice(payment.amount)} removed`, result.value);
+      showUndo(`${tenderLabel(payment)} ${formatPrice(payment.amount)} removed`, result.value);
     } catch {
       setFailure("Couldn't save on this device. Try again.");
     }
@@ -120,7 +128,12 @@ function BillForm({ screen, onSettled, onClose }: Omit<Props, "open">) {
 
   const dishes = dishCount(screen.ticket.rounds.flatMap((r) => r.lines));
   const nothingLeft = discount.ok && remaining === 0;
-  const label = receipt?.ok && !settles ? `Received ${formatPrice(receipt.value.amount)}` : `Settle ${formatPrice(Math.max(0, remaining) as Paise)}`;
+  const later = input.method === "later";
+  const label = later
+    ? `Pay Later ${formatPrice(receipt?.ok ? receipt.value.amount : (Math.max(0, remaining) as Paise))}`
+    : receipt?.ok && !settles
+      ? `Received ${formatPrice(receipt.value.amount)}`
+      : `Settle ${formatPrice(Math.max(0, remaining) as Paise)}`;
 
   return (
     <div className="space-y-6">
@@ -146,7 +159,8 @@ function BillForm({ screen, onSettled, onClose }: Omit<Props, "open">) {
             `${dishes} ${dishes === 1 ? "dish" : "dishes"}`
           )}
         </p>
-        {!adjusting && (
+        {/* At the first restaurant only the owner gives a discount. */}
+        {!adjusting && can("bills.discount") && (
           <Button variant="plain" size="compact" className="mt-1" onClick={() => setAdjusting(true)}>
             Round off or discount
           </Button>
@@ -189,7 +203,7 @@ function BillForm({ screen, onSettled, onClose }: Omit<Props, "open">) {
         <ListSection header="Received">
           {payments.map((p) => (
             <PaymentRow key={p.id} payment={p}>
-              {counts(p) && (
+              {counts(p) && can("payments.remove") && (
                 <Button variant="plain" size="compact" className="-mr-3" onClick={() => remove(p)}>
                   Remove
                 </Button>
@@ -210,11 +224,27 @@ function BillForm({ screen, onSettled, onClose }: Omit<Props, "open">) {
           <>
             <section className="space-y-3">
               <h3 className="px-1 text-[13px] font-semibold text-muted">How did they pay?</h3>
-              <SegmentedControl label="How did they pay?" options={METHODS} value={input.method} onChange={choose} />
+              <SegmentedControl
+                label="How did they pay?"
+                options={can("payments.later") ? METHODS : METHODS.filter((m) => m.value !== "later")}
+                value={input.method}
+                onChange={choose}
+              />
+              {later && (
+                <CustomerField
+                  name={input.customer}
+                  phone={input.phone}
+                  regulars={dues.state === "ready" ? dues.regulars : []}
+                  owes={(phone) => (dues.state === "ready" ? owedBy(dues.dues, phone) : 0)}
+                  adding={receipt?.ok ? receipt.value.amount : (0 as Paise)}
+                  nameError={tender && !tender.ok && tender.error === "tooLong" ? "Keep the name short." : undefined}
+                  onChange={(patch) => edit(patch)}
+                />
+              )}
               {input.method && (
                 <div className="space-y-1">
                   <TextField
-                    label={input.method === "cash" ? "Cash received" : "UPI received"}
+                    label={input.method === "cash" ? "Cash received" : later ? "On their name" : "UPI received"}
                     prefix="₹"
                     inputMode="decimal"
                     autoComplete="off"
@@ -229,17 +259,17 @@ function BillForm({ screen, onSettled, onClose }: Omit<Props, "open">) {
                   )}
                   {receipt?.ok && !settles && (
                     <p className="px-1 text-[13px] text-muted">
-                      Part payment: {formatPrice((remaining - receipt.value.amount) as Paise)} will still be due.
+                      {later ? "Part on their name" : "Part payment"}: {formatPrice((remaining - receipt.value.amount) as Paise)} will still be due.
                     </p>
                   )}
                 </div>
               )}
             </section>
             <div className="space-y-2">
-              <Button className="min-h-14 w-full text-[19px]" disabled={!discount.ok || !receipt?.ok} onClick={() => commit("receive")}>
+              <Button className="min-h-14 w-full text-[19px]" disabled={!discount.ok || !receipt?.ok || !tender?.ok} onClick={() => commit("receive")}>
                 {label}
               </Button>
-              {!input.method && <p className="text-center text-[13px] text-muted">Choose Cash or UPI to settle.</p>}
+              {!input.method && <p className="text-center text-[13px] text-muted">Choose how they paid.</p>}
             </div>
           </>
         )
@@ -254,8 +284,80 @@ const DISCOUNT_ERRORS: Partial<Record<string, (subtotal: Paise, paid: Paise) => 
   belowPaid: (_, paid) => `${formatPrice(paid)} is already paid; it can't go below that.`,
 };
 
-const RECEIVED_ERRORS: Record<"invalid" | "zero" | "moreThanDue", (remaining: Paise, method: PaymentMethod) => string> = {
+const RECEIVED_ERRORS: Record<"invalid" | "zero" | "moreThanDue", (remaining: Paise, method: TenderMethod) => string> = {
   invalid: () => "Type an amount, like 500.",
-  zero: () => "Type the amount received.",
-  moreThanDue: (remaining) => `UPI is exact: no more than ${formatPrice(remaining)}.`,
+  zero: () => "Type the amount.",
+  moreThanDue: (remaining, method) => `${method === "later" ? "No" : "UPI is exact: no"} more than ${formatPrice(remaining)}.`,
 };
+
+// Whose name the bill goes on, and their mobile: the number is who they are.
+// A regular already used is one tap and brings their number; a new one gives
+// it once, and is offered from then on.
+function CustomerField({
+  name,
+  phone,
+  regulars,
+  owes,
+  adding,
+  nameError,
+  onChange,
+}: {
+  name: string;
+  phone: string;
+  regulars: Regular[];
+  owes: (phone: string) => number;
+  adding: Paise;
+  nameError?: string;
+  onChange: (patch: { customer?: string; phone?: string }) => void;
+}) {
+  const typed = nameKey(name);
+  const mobile = readPhone(phone);
+  const chosen = mobile.ok ? regulars.find((r) => r.phone === mobile.value) : undefined;
+  const offered = regulars.filter((r) => r !== chosen && nameKey(r.name).startsWith(typed));
+  const owed = mobile.ok ? owes(mobile.value) : 0;
+  const digits = phone.replace(/\D/g, "").length;
+  return (
+    <div className="space-y-3">
+      <TextField
+        label="Whose name?"
+        placeholder="e.g. Sharma ji"
+        autoCapitalize="words"
+        autoComplete="off"
+        enterKeyHint="next"
+        value={name}
+        error={nameError}
+        onChange={(e) => onChange({ customer: e.target.value })}
+      />
+      {offered.length > 0 && (
+        <div className="-mx-4 flex gap-2 overflow-x-auto px-4 [scrollbar-width:none]">
+          {offered.map((r) => (
+            <button
+              key={r.phone}
+              type="button"
+              aria-label={`${r.name}, ${formatPhone(r.phone)}`}
+              onClick={() => onChange({ customer: r.name, phone: formatPhone(r.phone) })}
+              className="min-h-11 shrink-0 rounded-full bg-surface px-4 text-[15px] font-semibold transition-colors active:bg-surface-2"
+            >
+              {r.name}
+            </button>
+          ))}
+        </div>
+      )}
+      <TextField
+        label="Mobile number"
+        type="tel"
+        inputMode="tel"
+        autoComplete="off"
+        placeholder="98765 43210"
+        value={phone}
+        error={!mobile.ok && mobile.error === "badPhone" && digits >= 10 ? "Ten digits, like 98765 43210." : undefined}
+        hint={
+          mobile.ok && typed !== ""
+            ? `${name.trim()} will owe ${formatPrice((Math.max(0, owed) + adding) as Paise)}${owed > 0 ? `, ${formatPrice(owed as Paise)} from before` : ""}.`
+            : "For a WhatsApp reminder, when it's time."
+        }
+        onChange={(e) => onChange({ phone: e.target.value })}
+      />
+    </div>
+  );
+}

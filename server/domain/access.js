@@ -8,6 +8,7 @@ export const PERMISSIONS = [
   "stock.markOut",
   "expenses.note",
   "bills.discount",
+  "payments.later",
   "payments.correct",
   "payments.remove",
   "expenses.remove",
@@ -22,9 +23,11 @@ export const PERMISSIONS = [
 
 const STAFF = ["orders.take", "payments.take", "orders.cancelSent", "stock.markOut", "expenses.note"];
 
+// No discounts: at the first restaurant only the owner gives one (2026-10-30).
+// Pay later is a manager's call: the owner isn't free to do it all (2026-11-01).
 const MANAGER = [
   ...STAFF,
-  "bills.discount",
+  "payments.later",
   "payments.correct",
   "payments.remove",
   "expenses.remove",

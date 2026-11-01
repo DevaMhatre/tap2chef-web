@@ -34,8 +34,8 @@ export function useDayNumbers(chosen: BusinessDate | null): Day {
 
   // A snapshot of another day (just changed) is not this day's numbers.
   if (!loaded || loaded.day !== day) return { state: "loading", day, today };
-  const { orders, lines, payments, expenses, drawer: entries } = loaded.snapshot;
-  const numbers = dayNumbers(day, orders, lines, payments, expenses);
+  const { orders, lines, payments, expenses, drawer: entries, repayments } = loaded.snapshot;
+  const numbers = dayNumbers(day, orders, lines, payments, expenses, repayments);
   return {
     state: "ready",
     day,

@@ -1,5 +1,5 @@
 import type { VoidReason } from "../../../domain/order";
-import type { PaymentMethod } from "../../../domain/settlement";
+import type { PaymentMethod, Tender, TenderMethod } from "../../../domain/settlement";
 import type { OrderLabel } from "../../../usecases/useOrders";
 
 // The words staff read. "4" becomes "Table 4"; a named table keeps its name.
@@ -13,6 +13,10 @@ export const orderTitle = (label: OrderLabel): string =>
 export const shortOrderTitle = (label: OrderLabel): string =>
   label.kind === "table" ? tableTitle(label.name) : `Token ${label.token}`;
 
+/** A dish as ordered: "Chicken Biryani · Half", or just its name. */
+export const dishName = (line: { name: string; portion?: string }): string =>
+  line.portion === undefined ? line.name : `${line.name} · ${line.portion}`;
+
 export const VOID_REASONS: { value: VoidReason; label: string }[] = [
   { value: "wrongEntry", label: "Wrong entry" },
   { value: "guestChangedMind", label: "Guest changed mind" },
@@ -21,12 +25,16 @@ export const VOID_REASONS: { value: VoidReason; label: string }[] = [
 
 export const voidReasonLabel = (reason: VoidReason): string => VOID_REASONS.find((r) => r.value === reason)!.label;
 
-/** How a bill was paid, in a word or two. */
-export function paidByLabel(payments: readonly { method: PaymentMethod }[]): string {
+/** How a bill was paid, in a word or two: "Cash", "Cash + UPI", "Later". */
+export function paidByLabel(payments: readonly Tender[]): string {
   const methods = new Set(payments.map((p) => p.method));
   if (methods.size === 0) return "Nothing to pay";
-  if (methods.size > 1) return "Cash + UPI";
-  return methods.has("cash") ? "Cash" : "UPI";
+  return (["cash", "upi", "later"] as const).filter((m) => methods.has(m)).map((m) => TENDER_LABEL[m]).join(" + ");
 }
 
 export const METHOD_LABEL: Record<PaymentMethod, string> = { cash: "Cash", upi: "UPI" };
+export const TENDER_LABEL: Record<TenderMethod, string> = { ...METHOD_LABEL, later: "Later" };
+
+/** One payment's way in: "Cash", or "Later · Sharma ji". */
+export const tenderLabel = (tender: Tender): string =>
+  tender.method === "later" ? `Later · ${tender.customer}` : METHOD_LABEL[tender.method];

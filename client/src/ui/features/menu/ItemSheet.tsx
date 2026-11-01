@@ -10,7 +10,7 @@ import { Sheet } from "../../design-system/Sheet";
 import { Switch } from "../../design-system/Switch";
 import { useUndoToast } from "../../design-system/UndoToast";
 import { categoriesOf } from "./NewCategoryField";
-import { categoryMessage, dietMessage, itemNameMessage, priceMessage } from "./display";
+import { categoryMessage, dietMessage, halfMessage, itemNameMessage, priceMessage } from "./display";
 import { DIET_OPTIONS } from "./QuickAddSheet";
 
 const FORM_ID = "item-form";
@@ -42,7 +42,12 @@ function ItemForm({ item, menu, onClose }: { item: MenuItem; menu: ReadyMenuBuil
   const [texts, setTexts] = useState<Record<string, string>>(() =>
     Object.fromEntries(menu.profiles.map((p) => [p.id, initial.prices[p.id] ?? ""])),
   );
+  const [halfTexts, setHalfTexts] = useState<Record<string, string>>(() =>
+    Object.fromEntries(menu.profiles.map((p) => [p.id, initial.halves?.[p.id] ?? ""])),
+  );
   const [errors, setErrors] = useState<ItemDraftErrors>({});
+  const halved = draft.halves !== null;
+  const soldIn = menu.profiles.filter((p) => draft.prices[p.id] !== undefined);
 
   const sold = (id: ProfileId) => draft.prices[id] !== undefined;
   const setSold = (id: ProfileId, on: boolean) =>
@@ -57,9 +62,17 @@ function ItemForm({ item, menu, onClose }: { item: MenuItem; menu: ReadyMenuBuil
     setDraft((d) => ({ ...d, prices: { ...d.prices, [id]: text } }));
   };
 
+  const setHalfText = (id: ProfileId, text: string) => {
+    setHalfTexts((t) => ({ ...t, [id]: text }));
+    setDraft((d) => ({ ...d, halves: { ...d.halves, [id]: text } }));
+  };
+  const setHalved = (on: boolean) => setDraft((d) => ({ ...d, halves: on ? { ...halfTexts } : null }));
+
   async function save(event: FormEvent) {
     event.preventDefault();
-    const result = await menu.saveItem(item.id, draft);
+    // Only the lists it's sold in need a half price.
+    const halves = draft.halves && Object.fromEntries(soldIn.map((p) => [p.id, draft.halves![p.id] ?? ""]));
+    const result = await menu.saveItem(item.id, { ...draft, halves });
     if (!result.ok) return setErrors(result.error);
     haptic();
     onClose();
@@ -107,7 +120,7 @@ function ItemForm({ item, menu, onClose }: { item: MenuItem; menu: ReadyMenuBuil
       </div>
 
       <ListSection
-        header="Prices"
+        header={halved ? "Full prices" : "Prices"}
         footer={errors.profiles ? undefined : "Switch a list off to stop selling this item there."}
       >
         {menu.profiles.map((profile) => (
@@ -138,6 +151,33 @@ function ItemForm({ item, menu, onClose }: { item: MenuItem; menu: ReadyMenuBuil
         ))}
       </ListSection>
       {errors.profiles && <FieldError>Sell it in at least one list.</FieldError>}
+
+      <ListSection header={halved ? "Half prices" : undefined}>
+        <label className="flex min-h-11 items-center gap-3 py-1.5 pr-2 pl-4">
+          <span className="min-w-0 flex-1 truncate text-[17px]">Sold half too</span>
+          <Switch label="Sold half too" checked={halved} onChange={setHalved} />
+        </label>
+        {halved &&
+          soldIn.map((profile) => (
+            <div key={profile.id} className="flex min-h-11 items-center gap-3 py-1.5 pr-2 pl-4">
+              <span className="min-w-0 flex-1 truncate text-[17px]">{menu.profiles.length > 1 ? profile.name : "Half"}</span>
+              <TextField
+                label={`${profile.name} half price`}
+                labelHidden
+                inset
+                prefix="₹"
+                inputMode="decimal"
+                autoComplete="off"
+                className="w-28"
+                value={halfTexts[profile.id] ?? ""}
+                error={halfMessage(errors.halves?.[profile.id])}
+                onChange={(e) => setHalfText(profile.id, e.target.value)}
+              />
+              {/* Lines up with the price fields above, which have a switch here. */}
+              <span aria-hidden className="w-14 shrink-0" />
+            </div>
+          ))}
+      </ListSection>
 
       <Button variant="destructive" className="w-full" onClick={remove}>
         Delete Item

@@ -1,3 +1,4 @@
+import type { PhonePerson } from "./access";
 import { normalizeName } from "./menu";
 import { err, ok, type Result } from "./result";
 
@@ -13,7 +14,8 @@ export type Email = string & { readonly __brand: "Email" };
  */
 export type DeviceSession =
   | { via: "email"; email: Email; restaurantName: string }
-  | { via: "link"; restaurantName: string };
+  /** `person`: who this phone was added for; missing on a phone linked before people existed (it works as the owner). */
+  | { via: "link"; restaurantName: string; person?: PhonePerson };
 
 export const isOwnerPhone = (session: DeviceSession | null | undefined): boolean => session?.via === "email";
 

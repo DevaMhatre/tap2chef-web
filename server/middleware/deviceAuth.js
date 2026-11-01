@@ -47,6 +47,13 @@ const deviceAuth = async (req, res, next) => {
     return res.status(401).json({ success: false, message: "Not a device token" });
   }
 
+  // A removed phone hears "removed" (and clears itself) before anything
+  // else: removing it also retires its person, which alone would only sign it out.
+  if (typeof claims.deviceId === "string") {
+    const removed = await Device.exists({ accountId: claims.accountId, _id: claims.deviceId, removedAt: { $exists: true } });
+    if (removed) return res.status(401).json({ success: false, reason: "removed", message: "This phone was removed from the restaurant" });
+  }
+
   const member = await Member.findOne({ accountId: claims.accountId, _id: claims.memberId }).lean();
   if (!member || member.removedAt != null) {
     return res.status(401).json({ success: false, message: "This device is no longer signed in" });

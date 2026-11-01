@@ -2,11 +2,14 @@ import type { Paise } from "../../../domain/money";
 import type { OrderLine } from "../../../domain/order";
 import { lineTotal } from "../../../domain/order";
 import type { ReadyOrder } from "../../../usecases/useOrder";
+import { MdPrint } from "react-icons/md";
+import { Button } from "../../design-system/Button";
 import { DietMark } from "../../design-system/DietMark";
 import { ListSection } from "../../design-system/GroupedList";
 import { Stepper } from "../../design-system/Stepper";
 import { formatPrice, formatTime } from "../../format";
-import { voidReasonLabel } from "./labels";
+import { DishLabel } from "./DishLabel";
+import { dishName, voidReasonLabel } from "./labels";
 
 type Props = {
   screen: ReadyOrder;
@@ -33,6 +36,12 @@ export function Ticket({ screen, onStep, onEditDraft, onVoid }: Props) {
         <ListSection
           key={round.id}
           header={`Round ${round.number} · ${formatTime(round.sentAt)}`}
+          headerAction={
+            <Button variant="plain" size="compact" className="-mr-3" aria-label={`Print round ${round.number} for the kitchen`} onClick={() => void screen.printRound(round.id)}>
+              <MdPrint aria-hidden className="text-lg" />
+              Print
+            </Button>
+          }
           // Said once, under the latest round: nothing else hints that a sent dish can be cancelled.
           footer={i === rounds.length - 1 ? "Tap a sent dish to cancel it." : undefined}
         >
@@ -49,14 +58,14 @@ export function Ticket({ screen, onStep, onEditDraft, onVoid }: Props) {
               <button type="button" onClick={() => onEditDraft(line)} className="flex min-h-11 min-w-0 flex-1 items-center gap-3 text-left">
                 <DietMark diet={line.diet} decorative />
                 <span className="min-w-0">
-                  <span className="block truncate text-[17px]">{line.name}</span>
+                  <DishLabel line={line} className="text-[17px]" />
                   <span className="block truncate text-[13px] text-muted">
                     <span className="tabular-nums">{formatPrice(lineTotal(line))}</span> ·{" "}
                     {line.note ? line.note : <span className="text-primary">Add note</span>}
                   </span>
                 </span>
               </button>
-              <Stepper value={line.quantity} label={line.name} removable onStep={(by) => onStep(line, by)} />
+              <Stepper value={line.quantity} label={dishName(line)} removable onStep={(by) => onStep(line, by)} />
             </div>
           ))}
         </ListSection>
@@ -93,13 +102,16 @@ export function Ticket({ screen, onStep, onEditDraft, onVoid }: Props) {
 
 function SentLine({ line, onVoid }: { line: OrderLine; onVoid: (line: OrderLine) => void }) {
   if (line.state.status === "voided") {
-    const { reason } = line.state;
+    const { reason, by } = line.state;
     return (
       <div className="flex min-h-11 items-center gap-3 px-4 py-3 text-muted">
         <span className="w-7 shrink-0 text-[15px] tabular-nums">{line.quantity}×</span>
         <span className="min-w-0 flex-1">
-          <span className="block truncate text-[17px] line-through">{line.name}</span>
-          <span className="block truncate text-[13px]">Cancelled{reason ? ` · ${voidReasonLabel(reason)}` : ""}</span>
+          <DishLabel line={line} className="text-[17px] line-through" />
+          <span className="block truncate text-[13px]">
+            Cancelled{reason ? ` · ${voidReasonLabel(reason)}` : ""}
+            {by ? ` · by ${by}` : ""}
+          </span>
         </span>
       </div>
     );
@@ -108,12 +120,12 @@ function SentLine({ line, onVoid }: { line: OrderLine; onVoid: (line: OrderLine)
     <button
       type="button"
       onClick={() => onVoid(line)}
-      aria-label={`${line.quantity} ${line.name}, sent. Cancel…`}
+      aria-label={`${line.quantity} ${dishName(line)}, sent. Cancel…`}
       className="flex min-h-11 w-full items-center gap-3 px-4 py-3 text-left transition-colors active:bg-surface-2"
     >
       <span className="w-7 shrink-0 text-[15px] text-muted tabular-nums">{line.quantity}×</span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[17px]">{line.name}</span>
+        <DishLabel line={line} className="text-[17px]" />
         {line.note && <span className="block truncate text-[13px] text-muted">{line.note}</span>}
       </span>
       <span className="shrink-0 text-[15px] tabular-nums">{formatPrice(lineTotal(line))}</span>

@@ -59,10 +59,15 @@ export type OrderCommands = {
   removeTable(id: TableId): Promise<Result<Undo, "occupied">>;
 
   /**
-   * One more of a dish. `order` may not be stored yet: the first dish stores
-   * it, so a table tapped and left leaves nothing behind.
+   * One more of a dish, or of one of its portions ("Half"). `order` may not
+   * be stored yet: the first dish stores it, so a table tapped and left
+   * leaves nothing behind.
    */
-  addDish(order: Order, dish: OrderableItem): Promise<Result<OrderLine, "outToday" | "settled">>;
+  addDish(
+    order: Order,
+    dish: OrderableItem,
+    portion?: string,
+  ): Promise<Result<OrderLine, "outToday" | "settled" | "noPortion">>;
   /**
    * One more or one fewer, planned against the stored quantity so fast taps
    * all count. Below 1 removes the line, with undo.
@@ -93,7 +98,7 @@ export type OrderCommands = {
   /** Settles a bill with nothing left to pay: ₹0 dishes, or on the house. */
   closeBill(orderId: OrderId, discount?: Discount): Promise<Result<Undo, CloseError>>;
   /** "It was UPI, not cash." Same amount, other method, and it shows. */
-  correctPayment(paymentId: PaymentId, method: PaymentMethod): Promise<Result<void, "unchanged" | "removed" | "missing">>;
+  correctPayment(paymentId: PaymentId, method: PaymentMethod): Promise<Result<void, "unchanged" | "removed" | "later" | "missing">>;
   /** Takes a wrong payment off the bill; it stays listed. Undo puts it back. */
   removePayment(paymentId: PaymentId): Promise<Result<Undo, RemoveError | "missing">>;
 };
@@ -104,7 +109,11 @@ export type OrderDesk = {
 };
 
 // The service's rules and write discipline, free of React.
-export function createOrderDesk(repository: OrderRepository, ids: IdGenerator, clock: Clock): OrderDesk {
+/**
+ * `who` names the person working this phone ("Ravi", "Owner"), stamped on
+ * what they cancel and what money they take; undefined on a phone working alone.
+ */
+export function createOrderDesk(repository: OrderRepository, ids: IdGenerator, clock: Clock, who: () => string | undefined = () => undefined): OrderDesk {
   const writer = createSerialWriter<OrderSnapshot, OrderChange>((changes) => repository.write(changes), applyChanges);
   const { run } = writer;
   const today = () => businessDate(clock.now());
@@ -207,8 +216,8 @@ export function createOrderDesk(repository: OrderRepository, ids: IdGenerator, c
         return { changes, result: ok(undoOf(changes)) };
       }),
 
-    addDish: (order, dish) =>
-      run<Result<OrderLine, "outToday" | "settled">>(null, (s) => {
+    addDish: (order, dish, portion) =>
+      run<Result<OrderLine, "outToday" | "settled" | "noPortion">>(null, (s) => {
         const now = clock.now();
         const day = businessDate(now);
         if (outOn(s.outOfStock, day).has(dish.item.id)) return nothing(err("outToday"));
@@ -240,7 +249,9 @@ export function createOrderDesk(repository: OrderRepository, ids: IdGenerator, c
           changes.push(put({ table: "orders", record: target }));
         }
 
-        const line = addToDraft(s.lines, target.id, dish, ids.newId() as LineId, now);
+        const added = addToDraft(s.lines, target.id, dish, portion, ids.newId() as LineId, now);
+        if (!added.ok) return nothing(added);
+        const line = added.value;
         const before = lineIn(s, line.id);
         if (!before || before.quantity !== line.quantity) changes.push(put({ table: "lines", record: line }));
         return { changes, result: ok(line) };
@@ -289,7 +300,10 @@ export function createOrderDesk(repository: OrderRepository, ids: IdGenerator, c
         const voided = voidSent(line, quantity, reason, ids.newId() as LineId, clock.now());
         if (!voided.ok) return nothing(voided);
 
-        const changes = voided.value.map((record) => put({ table: "lines", record }));
+        const by = who();
+        const changes = voided.value.map((record) =>
+          put({ table: "lines", record: by && record.state.status === "voided" ? { ...record, state: { ...record.state, by } } : record }),
+        );
         const split = changes.filter((c) => c.record.id !== line.id);
         const day = today();
         const alreadyOut = outOn(s.outOfStock, day).has(line.itemId);
@@ -343,7 +357,9 @@ export function createOrderDesk(repository: OrderRepository, ids: IdGenerator, c
         if (!order) return nothing(err("missing"));
         const received = receivePayment(order, s.lines, s.payments, discount, tender, amount, ids.newId() as PaymentId, clock.now());
         if (!received.ok) return nothing(received);
-        const { payment, order: after } = received.value;
+        const { order: after } = received.value;
+        const by = who();
+        const payment = by ? { ...received.value.payment, by } : received.value.payment;
         return {
           changes: [put({ table: "orders", record: after }), put({ table: "payments", record: payment })],
           result: ok({ settled: after.state.status === "settled", undo: takeBack(order, after, payment) }),
@@ -360,7 +376,7 @@ export function createOrderDesk(repository: OrderRepository, ids: IdGenerator, c
       }),
 
     correctPayment: (paymentId, method) =>
-      run<Result<void, "unchanged" | "removed" | "missing">>(`correctPayment:${paymentId}`, (s) => {
+      run<Result<void, "unchanged" | "removed" | "later" | "missing">>(`correctPayment:${paymentId}`, (s) => {
         const payment = s.payments.find((p) => p.id === paymentId);
         if (!payment) return nothing(err("missing"));
         const corrected = correctPayment(payment, method, clock.now());

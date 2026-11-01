@@ -7,10 +7,11 @@ import { DietMark } from "../../design-system/DietMark";
 import { SelectField, TextField } from "../../design-system/Field";
 import { ListRow, ListSection } from "../../design-system/GroupedList";
 import { haptic } from "../../design-system/haptic";
+import { Switch } from "../../design-system/Switch";
 import { SegmentedControl } from "../../design-system/SegmentedControl";
 import { Sheet } from "../../design-system/Sheet";
 import { categoriesOf, NewCategoryField } from "./NewCategoryField";
-import { categoryMessage, dietMessage, firstPriceMessage, itemNameMessage, priceSummary } from "./display";
+import { categoryMessage, dietMessage, firstHalfMessage, firstPriceMessage, itemNameMessage, priceSummary } from "./display";
 
 export const DIET_OPTIONS = [
   { value: "veg", label: <><DietMark diet="veg" decorative /> Veg</> },
@@ -49,12 +50,13 @@ export function QuickAddSheet({ open, onClose, menu }: Props) {
 type Added = { id: ItemId; name: string; diet: Diet; summary: string };
 type Notice = { kind: "added"; item: Added } | { kind: "removed"; name: string } | null;
 
-type Form = ReturnType<ReadyMenuBuilder["newItem"]> & { price: string };
-const isBlank = (f: Form) => f.draft.name.trim() === "" && f.price.trim() === "";
+/** `half` is null for a dish sold one way. */
+type Form = ReturnType<ReadyMenuBuilder["newItem"]> & { price: string; half: string | null };
+const isBlank = (f: Form) => f.draft.name.trim() === "" && f.price.trim() === "" && (f.half ?? "").trim() === "";
 
 function QuickAddForm({ menu, onCount }: { menu: ReadyMenuBuilder; onCount: (count: number) => void }) {
   const categories = categoriesOf(menu);
-  const [form, setForm] = useState<Form>(() => ({ ...menu.newItem(), price: "" }));
+  const [form, setForm] = useState<Form>(() => ({ ...menu.newItem(), price: "", half: null }));
   const [addingCategory, setAddingCategory] = useState(false);
   const [errors, setErrors] = useState<ItemDraftErrors>({});
   const [failure, setFailure] = useState<string>();
@@ -63,6 +65,7 @@ function QuickAddForm({ menu, onCount }: { menu: ReadyMenuBuilder; onCount: (cou
   useEffect(() => onCount(added.length), [added.length, onCount]);
   const nameRef = useRef<HTMLInputElement>(null);
   const priceRef = useRef<HTMLInputElement>(null);
+  const halfRef = useRef<HTMLInputElement>(null);
 
   const setDraft = (patch: Partial<typeof form.draft>) => setForm((f) => ({ ...f, draft: { ...f.draft, ...patch } }));
   const useCategory = (id: CategoryId) => {
@@ -86,13 +89,13 @@ function QuickAddForm({ menu, onCount }: { menu: ReadyMenuBuilder; onCount: (cou
     const sent = form;
     // A second Return on an empty form (double tap) does nothing.
     if (isBlank(sent)) return;
-    const saving = menu.saveItem(sent.id, withPriceEverywhere(sent.draft, sent.price));
+    const saving = menu.saveItem(sent.id, withPriceEverywhere(sent.draft, sent.price, sent.half));
 
-    // Clear at once, keeping category and veg mark, so a fast typist can start
+    // Clear at once, keeping category, veg mark and half, so a fast typist can start
     // the next dish while this one saves. Put back below if it fails, unless
     // they've already started typing.
     const next = menu.newItem();
-    const fresh: Form = { id: next.id, draft: { ...sent.draft, name: "", prices: next.draft.prices }, price: "" };
+    const fresh: Form = { id: next.id, draft: { ...sent.draft, name: "", prices: next.draft.prices }, price: "", half: sent.half === null ? null : "" };
     setForm(fresh);
     setErrors({});
     setFailure(undefined);
@@ -110,7 +113,7 @@ function QuickAddForm({ menu, onCount }: { menu: ReadyMenuBuilder; onCount: (cou
     if (!result.ok) {
       restore();
       setErrors(result.error);
-      (result.error.name ? nameRef : priceRef).current?.focus();
+      (result.error.name ? nameRef : result.error.prices || !result.error.halves ? priceRef : halfRef).current?.focus();
       return;
     }
     haptic();
@@ -174,16 +177,50 @@ function QuickAddForm({ menu, onCount }: { menu: ReadyMenuBuilder; onCount: (cou
         />
         <TextField
           ref={priceRef}
-          label="Price"
+          label={form.half === null ? "Price" : "Full"}
           prefix="₹"
           placeholder="0"
           inputMode="decimal"
           autoComplete="off"
-          enterKeyHint="enter"
+          enterKeyHint={form.half === null ? "enter" : "next"}
           value={form.price}
           error={firstPriceMessage(errors)}
           onChange={(e) => setForm((f) => ({ ...f, price: e.target.value }))}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && form.half !== null) {
+              e.preventDefault();
+              halfRef.current?.focus();
+            }
+          }}
         />
+        <label
+          className={`flex min-h-11 items-center justify-between rounded-xl bg-surface pl-3 text-[17px] ${form.half === null ? "col-span-2" : ""}`}
+        >
+          Sold half too
+          <Switch
+            label="Sold half too"
+            checked={form.half !== null}
+            onChange={(on) => {
+              setForm((f) => ({ ...f, half: on ? "" : null }));
+              if (on) requestAnimationFrame(() => halfRef.current?.focus());
+            }}
+          />
+        </label>
+        {form.half !== null && (
+          <TextField
+            ref={halfRef}
+            label="Half"
+            labelHidden
+            prefix="₹"
+            placeholder="Half"
+            inputMode="decimal"
+            autoComplete="off"
+            enterKeyHint="enter"
+            value={form.half}
+            error={firstHalfMessage(errors)}
+            onChange={(e) => setForm((f) => ({ ...f, half: e.target.value }))}
+          />
+        )}
       </div>
 
       <div>

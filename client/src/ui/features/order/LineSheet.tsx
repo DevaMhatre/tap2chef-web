@@ -5,6 +5,7 @@ import { Button } from "../../design-system/Button";
 import { TextField } from "../../design-system/Field";
 import { Sheet } from "../../design-system/Sheet";
 import { useUndoToast } from "../../design-system/UndoToast";
+import { dishName } from "./labels";
 
 type Props = { line: OrderLine | null; screen: ReadyOrder; onClose: () => void };
 
@@ -16,7 +17,7 @@ export function LineSheet({ line, screen, onClose }: Props) {
     <Sheet
       open={line !== null}
       onClose={onClose}
-      title={line?.name ?? ""}
+      title={line ? dishName(line) : ""}
       action={
         <Button size="compact" type="submit" form={FORM_ID}>
           Save
@@ -42,7 +43,7 @@ function LineForm({ line, screen, onClose }: { line: OrderLine; screen: ReadyOrd
   async function remove() {
     const result = await screen.removeLine(line.id);
     onClose();
-    if (result.ok) showUndo(`Removed ${line.name}`, result.value);
+    if (result.ok) showUndo(`Removed ${dishName(line)}`, result.value);
   }
 
   return (
@@ -68,7 +69,7 @@ function LineForm({ line, screen, onClose }: { line: OrderLine; screen: ReadyOrd
         }}
       />
       <Button variant="destructive" className="w-full" onClick={remove}>
-        Remove {line.name}
+        Remove {dishName(line)}
       </Button>
     </form>
   );

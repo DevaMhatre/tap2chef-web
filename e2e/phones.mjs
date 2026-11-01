@@ -34,6 +34,14 @@ async function device(name, { w = 360, h = 740, scheme = "light", ua }) {
   };
   return { ctx, page, errors, shot };
 }
+/** "Add a Phone": who it is for, then the code. `manages`: can they handle money and the menu? */
+async function addPhoneFor(page, name, manages) {
+  await page.getByRole("button", { name: "Add a Phone" }).click();
+  await page.getByLabel("Whose phone is it?").fill(name);
+  await page.getByRole("radio", { name: manages ? "Yes" : "No", exact: true }).click();
+  await page.getByRole("button", { name: "Show Code" }).click();
+}
+const tabs = (page) => page.locator("nav a, aside a").evaluateAll((els) => els.filter((e) => e.checkVisibility()).map((e) => e.textContent.trim()).filter(Boolean));
 const door = (page, name) => page.getByRole("button", { name: new RegExp(name) }).filter({ visible: true }).first();
 
 // --- The owner's iPhone: a quick setup.
@@ -66,6 +74,14 @@ await owner.page.getByText("This phone").waitFor();
 check(await owner.page.getByText("iPhone", { exact: true }).isVisible(), "owner: its own phone is listed as iPhone, This phone");
 await owner.shot("restaurant-sheet");
 await owner.page.getByRole("button", { name: "Add a Phone" }).click();
+await owner.page.getByRole("button", { name: "Show Code" }).click();
+check(await owner.page.getByText("Enter their name.").isVisible(), "owner: a phone is for someone, by name");
+await owner.page.getByLabel("Whose phone is it?").fill("Ravi");
+await owner.page.getByRole("button", { name: "Show Code" }).click();
+check(await owner.page.getByText("Choose Yes or No.").isVisible(), "owner: and whether they handle money and the menu");
+await owner.page.getByRole("radio", { name: "No", exact: true }).click();
+await owner.shot("who");
+await owner.page.getByRole("button", { name: "Show Code" }).click();
 await owner.page.getByRole("img", { name: /A code to join/ }).waitFor();
 const shownCode = (await owner.page.getByRole("img", { name: /A code to join/ }).getAttribute("aria-label")).match(/\d{6}/)[0];
 check(/^\d{6}$/.test(shownCode), `owner: a QR and a 6-digit code (${shownCode})`);
@@ -85,10 +101,16 @@ await waiter.page.locator("a[href^='/tables/']").first().waitFor({ timeout: 10_0
 check(await door(waiter.page, "Sharma Dhaba").isVisible(), "waiter: the floor and the name arrive, no setup");
 
 const joinedAt = Date.now();
-await owner.page.getByText("Android phone joined").waitFor({ timeout: 10_000 });
-check(Date.now() - joinedAt < 6000, `owner: sees "Android phone joined" (${Date.now() - joinedAt} ms)`);
+await owner.page.getByText("Ravi’s phone joined").waitFor({ timeout: 10_000 });
+check(Date.now() - joinedAt < 6000, `owner: sees "Ravi’s phone joined" (${Date.now() - joinedAt} ms)`);
 await owner.shot("phone-joined");
 await owner.page.getByRole("button", { name: "Done" }).click();
+
+// --- Ravi's phone does what a waiter does: no Menu, no Today.
+check(JSON.stringify(await tabs(waiter.page)) === JSON.stringify(["Tables", "Orders", "Expenses"]), `waiter: three tabs (${(await tabs(waiter.page)).join(", ")})`);
+await waiter.page.goto(`${BASE}/today`);
+await waiter.page.locator("a[href^='/tables/']").first().waitFor();
+check(waiter.page.url().endsWith("/tables"), "waiter: a link to Today goes home");
 
 // --- The waiter sees the details, can't change them, and sees no phones.
 await door(waiter.page, "Sharma Dhaba").click();
@@ -99,17 +121,50 @@ check(!(await waiter.page.getByRole("heading", { name: "Phones" }).isVisible()),
 await waiter.shot("restaurant-read-only");
 await waiter.page.getByRole("button", { name: "Done" }).click();
 
+// --- A discount sneaked onto a bill on Ravi's phone (no screen offers one):
+// the account refuses it, and the phone says so instead of pretending.
+await waiter.page.evaluate(async () => {
+  const idb = await new Promise((res, rej) => { const o = indexedDB.open("tap2chef"); o.onsuccess = () => res(o.result); o.onerror = rej; });
+  const tx = idb.transaction(["meta", "orders", "outbox"], "readwrite");
+  const get = (key) => new Promise((res) => { const r = tx.objectStore("meta").get(key); r.onsuccess = () => res(r.result?.value); });
+  const [accountId, shopId] = [await get("accountId"), await get("shopId")];
+  const now = Date.now();
+  tx.objectStore("orders").put({
+    id: "sneaky", accountId, shopId, createdAt: now, updatedAt: now, deleted: false,
+    channel: { type: "takeaway", token: 99 }, profileId: "p", businessDate: "2026-11-01", openedAt: now,
+    status: "billed", state: { status: "billed", billedAt: now, discount: { amount: 10000, reason: "friend" } },
+  });
+  tx.objectStore("outbox").add({ table: "orders", recordId: "sneaky", queuedAt: now });
+  await new Promise((res) => (tx.oncomplete = res));
+  idb.close();
+});
+await waiter.page.getByText("1 change not saved").waitFor({ timeout: 15_000 });
+check(true, "waiter: a refused change shows as not saved");
+await waiter.page.getByText("1 change not saved").click();
+check(await waiter.page.getByText("This phone isn’t allowed to change a bill").isVisible(), "waiter: says what wasn't saved and who can do it");
+await waiter.shot("not-saved");
+// The same notice in light, on a wide screen.
+await waiter.page.emulateMedia({ colorScheme: "light" });
+await waiter.page.setViewportSize({ width: 1440, height: 900 });
+await waiter.shot("not-saved-desktop-light");
+await waiter.page.setViewportSize({ width: 360, height: 740 });
+await waiter.page.emulateMedia({ colorScheme: "dark" });
+await waiter.page.getByRole("button", { name: "OK", exact: true }).click();
+await waiter.page.getByText("Saved online").waitFor({ timeout: 10_000 });
+check(true, "waiter: seen, the badge is calm again");
+await waiter.page.getByRole("button", { name: "Done" }).click();
+
 // --- The owner removes it; it clears itself.
 await door(owner.page, "Sharma Dhaba").click();
-await owner.page.getByText("Android phone", { exact: true }).waitFor();
-check(await owner.page.getByText("active now").isVisible(), "owner: the Android phone is active now");
+await owner.page.getByText("Ravi", { exact: true }).waitFor();
+check(await owner.page.getByText("Android phone · active now").isVisible(), "owner: Ravi's Android phone is active now");
 await owner.page.getByRole("button", { name: "Remove", exact: true }).click();
 await owner.page.getByText("Anything it hasn’t sent yet is lost").waitFor();
 await owner.shot("remove");
-await owner.page.getByRole("button", { name: "Remove Android phone" }).dblclick();
+await owner.page.getByRole("button", { name: "Remove Ravi’s Phone" }).dblclick();
 await owner.page.getByRole("heading", { name: "Phones" }).waitFor();
 await owner.page.waitForTimeout(800);
-check(!(await owner.page.getByText("Android phone", { exact: true }).isVisible()), "owner: back on the sheet, the phone is gone");
+check(!(await owner.page.getByText("Ravi", { exact: true }).isVisible()), "owner: back on the sheet, Ravi's phone is gone");
 await owner.shot("after-remove");
 await owner.page.getByRole("button", { name: "Cancel" }).click();
 
@@ -137,7 +192,7 @@ const counter = await device("counter", { w: 820, h: 1180, ua: ANDROID });
   check((await page.getByLabel("6-digit code").inputValue()) === "", "counter: a wrong code is cleared");
   await counter.shot("wrong-code");
   await door(owner.page, "Sharma Dhaba").click();
-  await owner.page.getByRole("button", { name: "Add a Phone" }).click();
+  await addPhoneFor(owner.page, "Sunil", true);
   const img = owner.page.getByRole("img", { name: /A code to join/ });
   await img.waitFor();
   const fresh = (await img.getAttribute("aria-label")).match(/\d{6}/)[0];
@@ -148,8 +203,11 @@ const counter = await device("counter", { w: 820, h: 1180, ua: ANDROID });
   await page.getByRole("button", { name: "Join", exact: true }).click();
   await page.getByText("You’re in").waitFor();
   check(true, "counter: joins by the typed code");
-  await owner.page.getByText("Android tablet joined").or(owner.page.getByText("Android phone joined")).waitFor({ timeout: 10_000 });
+  await owner.page.getByText("Sunil’s phone joined").waitFor({ timeout: 10_000 });
   await owner.page.getByRole("button", { name: "Done" }).click();
+  await page.getByRole("button", { name: "Start Taking Orders" }).click();
+  await page.locator("a[href^='/tables/']").first().waitFor({ timeout: 10_000 });
+  check(JSON.stringify(await tabs(page)) === JSON.stringify(["Tables", "Orders", "Menu", "Expenses", "Today"]), `manager: all five tabs (${(await tabs(page)).join(", ")})`);
 }
 
 // --- A phone that keeps its own restaurant won't join another.

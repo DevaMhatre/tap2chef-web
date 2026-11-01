@@ -42,6 +42,7 @@ export const SHOP_TABLES = [
   "payments",
   "drawerEntries",
   "shopDetails",
+  "repayments",
 ] as const;
 
 export const SYNCED_TABLES = [...BRAND_TABLES, ...SHOP_TABLES] as const;
@@ -165,4 +166,10 @@ db.version(8)
 // per shop, whose id is the shop's.
 db.version(9).stores({
   shopDetails: "id, updatedAt",
+});
+
+// Step 11b: money a regular brings back for bills on their name, read by the
+// trading day it came in (the drawer) and all together (who owes what).
+db.version(10).stores({
+  repayments: "id, businessDate, updatedAt",
 });

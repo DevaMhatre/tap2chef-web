@@ -7,7 +7,7 @@ import { paise } from "../domain/money";
 import type { OrderId } from "../domain/order";
 import type { BillInput } from "../domain/settlement";
 import type { TableId } from "../domain/tables";
-import { fakeClock, fakeIds, fakeMenuRepository, fakeOrderRepository } from "./fakes";
+import { fakeClock, fakeIds, fakeKitchenPrinter, fakeMenuRepository, fakeOrderRepository } from "./fakes";
 import type { MenuSnapshot, Ports } from "./ports";
 import { PortsProvider } from "./PortsProvider";
 import { useOrder, type OrderTarget } from "./useOrder";
@@ -36,14 +36,16 @@ const t1 = "t1" as TableId;
 
 function renderOrder(target: OrderTarget, menuInitial: Partial<MenuSnapshot> = menu) {
   const orders = fakeOrderRepository({ tables: [{ id: t1, name: "1", sortKey: "1" }] });
+  const kitchen = fakeKitchenPrinter();
   const ports = {
     menu: fakeMenuRepository(menuInitial).repository,
     orders: orders.repository,
     ids: fakeIds(),
     clock: fakeClock(new Date(2026, 9, 29, 13, 0).getTime()).clock,
+    kitchen: kitchen.printer,
   } as Partial<Ports> as Ports;
   const wrapper = ({ children }: { children: ReactNode }) => <PortsProvider ports={ports}>{children}</PortsProvider>;
-  return { orders, ...renderHook(() => useOrder(target), { wrapper }) };
+  return { orders, kitchen, ...renderHook(() => useOrder(target), { wrapper }) };
 }
 
 const ready = <T extends { state: string }>(screen: T) => {
@@ -57,7 +59,7 @@ describe("useOrder", () => {
     await waitFor(() => expect(table.result.current.state).toBe("ready"));
     const dine = ready(table.result.current);
     expect(dine.label).toEqual({ kind: "table", name: "1" });
-    expect(dine.dishes.map((d) => [d.item.name, d.pricing.price])).toEqual([
+    expect(dine.dishes.map((d) => [d.item.name, d.choices[0]!.price])).toEqual([
       ["Dal Makhani", 22000],
       ["Paneer Tikka", 24000],
     ]);
@@ -67,7 +69,7 @@ describe("useOrder", () => {
     const take = ready(parcel.result.current);
     expect(take.label).toEqual({ kind: "token", token: 1, shared: false });
     // Paneer Tikka is dine-in only.
-    expect(take.dishes.map((d) => [d.item.name, d.pricing.price])).toEqual([["Dal Makhani", 20000]]);
+    expect(take.dishes.map((d) => [d.item.name, d.choices[0]!.price])).toEqual([["Dal Makhani", 20000]]);
   });
 
   it("adds, shows the cart and sends a round", async () => {
@@ -89,6 +91,48 @@ describe("useOrder", () => {
     expect(ready(result.current).dishes[0]!.inCart).toBe(0);
   });
 
+  it("adds a half and a full as their own lines, each counted on its button", async () => {
+    const halfFull = { kind: "portions" as const, portions: [{ name: "Half", price: paise(18000) }, { name: "Full", price: paise(32000) }] };
+    const { result } = renderOrder({ kind: "table", tableId: t1 }, { ...menu, items: [item("Biryani", { [dineIn.id]: halfFull })] });
+    await waitFor(() => expect(result.current.state).toBe("ready"));
+    await act(async () => {
+      const screen = ready(result.current);
+      await screen.addDish(screen.dishes[0]!, "Half");
+      await screen.addDish(screen.dishes[0]!, "Half");
+      await screen.addDish(screen.dishes[0]!, "Full");
+    });
+    const biryani = ready(result.current).dishes[0]!;
+    expect(biryani.inCart).toBe(3);
+    expect(biryani.choices.map((c) => [c.portion, c.price, c.inCart])).toEqual([
+      ["Half", 18000, 2],
+      ["Full", 32000, 1],
+    ]);
+    expect(ready(result.current).ticket.draft.map((l) => [l.portion, l.quantity])).toEqual([
+      ["Half", 2],
+      ["Full", 1],
+    ]);
+    expect(ready(result.current).ticket.total).toBe(68000);
+
+    // A portion the dish no longer has stores nothing, not even the order.
+    let refused: unknown;
+    await act(async () => {
+      refused = await ready(result.current).addDish(ready(result.current).dishes[0]!, "Quarter");
+    });
+    expect(refused).toEqual({ ok: false, error: "noPortion" });
+  });
+
+  it("prints a sent round for the kitchen: where it goes, which round, what to cook", async () => {
+    const { result, kitchen } = renderOrder({ kind: "table", tableId: t1 });
+    await waitFor(() => expect(result.current.state).toBe("ready"));
+    await act(async () => {
+      await ready(result.current).addDish(ready(result.current).dishes[0]!);
+      await ready(result.current).send();
+    });
+    const round = ready(result.current).ticket.rounds[0]!;
+    expect(await ready(result.current).printRound(round.id)).toEqual({ ok: true, value: undefined });
+    expect(kitchen.printed).toEqual([expect.objectContaining({ title: "Table 1", kind: "round", round: 1, lines: [{ quantity: 1, name: "Dal Makhani" }] })]);
+  });
+
   it("lets a new order switch price list before its first dish", async () => {
     const { result } = renderOrder({ kind: "table", tableId: t1 });
     await waitFor(() => expect(result.current.state).toBe("ready"));
@@ -105,10 +149,10 @@ describe("useOrder", () => {
     await waitFor(() => expect(gone.result.current.state).toBe("missing"));
   });
 
-  const input = (patch: Partial<BillInput> = {}): BillInput => ({ finalAmount: "", reason: "", method: null, received: "", ...patch });
+  const input = (patch: Partial<BillInput> = {}): BillInput => ({ finalAmount: "", reason: "", method: null, received: "", customer: "", phone: "", ...patch });
 
   it("leads from Send to Bill to Settle, takes money in parts, and frees the table", async () => {
-    const { result } = renderOrder({ kind: "table", tableId: t1 });
+    const { result, orders } = renderOrder({ kind: "table", tableId: t1 });
     await waitFor(() => expect(result.current.state).toBe("ready"));
     expect(ready(result.current).next).toBeNull();
     await act(async () => {
@@ -145,9 +189,31 @@ describe("useOrder", () => {
       const last = await ready(result.current).receive({ ...ready(result.current).billInput, method: "cash", received: "500" });
       expect(last).toMatchObject({ ok: true, value: { settled: true, change: 42000 } });
     });
+    // Settled untouched, the agreed discount is exactly what was stored.
+    expect(orders.current().orders[0]!.state).toMatchObject({ status: "settled", discount: { amount: 2000, reason: "Regular" } });
     // The table is free: a fresh, empty order.
     expect(ready(result.current).ticket.rounds).toEqual([]);
     expect(ready(result.current).next).toBeNull();
+  });
+
+  it("puts a bill on a regular's name only once they're named, and that settles it", async () => {
+    const { result, orders } = renderOrder({ kind: "table", tableId: t1 });
+    await waitFor(() => expect(result.current.state).toBe("ready"));
+    await act(async () => {
+      await ready(result.current).addDish(ready(result.current).dishes[0]!); // Dal ₹220
+      await ready(result.current).send();
+    });
+    await act(async () => {
+      await ready(result.current).presentBill();
+    });
+    expect(await ready(result.current).receive(input({ method: "later", received: "220" }))).toEqual({ ok: false, error: "invalid" });
+    await act(async () => {
+      expect(await ready(result.current).receive(input({ method: "later", received: "220", customer: "Sharma ji" }))).toEqual({ ok: false, error: "invalid" });
+      const r = await ready(result.current).receive(input({ method: "later", received: "220", customer: " Sharma  ji ", phone: "98765 43210" }));
+      expect(r).toMatchObject({ ok: true, value: { settled: true, change: 0 } });
+    });
+    expect(orders.current().payments).toMatchObject([{ method: "later", customer: "Sharma ji", phone: "9876543210", amount: 22000 }]);
+    expect(ready(result.current).ticket.rounds).toEqual([]);
   });
 
   it("shows a paid takeaway as paid", async () => {

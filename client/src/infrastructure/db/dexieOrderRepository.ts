@@ -69,6 +69,8 @@ function toOrderState(status: unknown, value: unknown): OrderState | undefined {
   return { status: "settled", billedAt: value.billedAt, settledAt: value.settledAt, subtotal: value.subtotal as Paise, ...extra };
 }
 
+const isPhone = (value: unknown): value is string => typeof value === "string" && /^[6-9]\d{9}$/.test(value);
+
 export function toPayment(r: StoredRecord): Payment | undefined {
   if (!isText(r.orderId) || !isPaise(r.amount) || r.amount === 0 || !isTime(r.receivedAt)) return undefined;
   if (r.correctedAt !== undefined && !isTime(r.correctedAt)) return undefined;
@@ -80,8 +82,12 @@ export function toPayment(r: StoredRecord): Payment | undefined {
     receivedAt: r.receivedAt,
     ...(r.correctedAt !== undefined && { correctedAt: r.correctedAt }),
     ...(r.removedAt !== undefined && { removedAt: r.removedAt }),
+    ...(isText(r.by) && { by: r.by }),
   };
   if (r.method === "cash") return { ...base, method: "cash" };
+  if (r.method === "later") {
+    return isText(r.customer) && isPhone(r.phone) ? { ...base, method: "later", customer: r.customer, phone: r.phone } : undefined;
+  }
   if (r.method !== "upi" || (r.ref !== undefined && !isText(r.ref))) return undefined;
   return { ...base, method: "upi", ...(r.ref !== undefined && { ref: r.ref }) };
 }
@@ -113,7 +119,13 @@ function toLineState(value: unknown): LineState | undefined {
   if (value.status === "sent") return { status: "sent", ...sent };
   if (value.status !== "voided" || !isTime(value.voidedAt)) return undefined;
   if (value.reason !== undefined && !REASONS.includes(value.reason as string)) return undefined;
-  return { status: "voided", ...sent, voidedAt: value.voidedAt, ...(value.reason !== undefined && { reason: value.reason as VoidReason }) };
+  return {
+    status: "voided",
+    ...sent,
+    voidedAt: value.voidedAt,
+    ...(value.reason !== undefined && { reason: value.reason as VoidReason }),
+    ...(isText(value.by) && { by: value.by }),
+  };
 }
 
 export function toLine(r: StoredRecord): OrderLine | undefined {
@@ -127,6 +139,7 @@ export function toLine(r: StoredRecord): OrderLine | undefined {
     orderId: r.orderId as OrderId,
     itemId: r.itemId as ItemId,
     name: r.name,
+    ...(isText(r.portion) && { portion: r.portion }),
     diet: r.diet as Diet,
     unitPrice: r.unitPrice as Paise,
     quantity: r.quantity as number,

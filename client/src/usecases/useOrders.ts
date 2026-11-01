@@ -57,7 +57,7 @@ export type Orders =
       /** An id for a new takeaway. Nothing is stored until its first dish. */
       newTakeaway(): OrderId;
       /** "It was UPI, not cash." Same amount, other method; the bill shows it was corrected. */
-      correctPayment(paymentId: PaymentId, method: PaymentMethod): Promise<Result<void, "unchanged" | "removed" | "missing">>;
+      correctPayment(paymentId: PaymentId, method: PaymentMethod): Promise<Result<void, "unchanged" | "removed" | "later" | "missing">>;
       /** Only an excess comes off a settled bill: `canRemove` says which. */
       removePayment(paymentId: PaymentId): Promise<Result<Undo, RemoveError | "missing">>;
       canRemove(bill: SettledSummary, payment: Payment): boolean;

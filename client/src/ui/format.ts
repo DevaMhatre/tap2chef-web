@@ -69,3 +69,6 @@ export function dayLabel(day: BusinessDate, today: BusinessDate): string {
 
 /** "Thursday 29 October". */
 export const formatDay = (day: BusinessDate): string => longDay.format(dayOf(day)).replace(",", "");
+
+/** "9876543210" → "98765 43210", as people read a mobile aloud. */
+export const formatPhone = (digits: string): string => (digits.length === 10 ? `${digits.slice(0, 5)} ${digits.slice(5)}` : digits);

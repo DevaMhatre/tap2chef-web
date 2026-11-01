@@ -69,6 +69,37 @@ describe("dexieMenuRepository", () => {
     expect(menu.items.map((i) => i.id)).toEqual(["samosa"]);
   });
 
+  it("round-trips a dish sold half and full, and back to one price", async () => {
+    const halfFull = {
+      kind: "portions" as const,
+      portions: [
+        { name: "Half", price: paise(18000) },
+        { name: "Full", price: paise(32000) },
+      ],
+    };
+    const biryani: MenuItem = { ...samosa, id: "biryani" as ItemId, prices: { ["dine-in" as ProfileId]: halfFull } };
+    await dexieMenuRepository.write([{ op: "put", table: "items", record: biryani }]);
+    expect((await nextMenu((m) => m.items.length === 1)).items).toEqual([biryani]);
+
+    const single: MenuItem = { ...biryani, prices: { ["dine-in" as ProfileId]: { kind: "fixed", price: paise(30000) } } };
+    await dexieMenuRepository.write([{ op: "put", table: "items", record: single }]);
+    expect((await nextMenu((m) => m.items[0]?.prices["dine-in" as ProfileId]?.kind === "fixed")).items).toEqual([single]);
+  });
+
+  it("skips a dish whose portions are malformed", async () => {
+    const meta = { accountId: "t", createdAt: 1, updatedAt: 1, deleted: false };
+    const bad = (id: string, portions: unknown) => ({ ...meta, ...samosa, id, prices: { d: { kind: "portions", portions } } });
+    await db.items.bulkPut([
+      { ...meta, ...samosa },
+      bad("empty", []),
+      bad("float", [{ name: "Half", price: 1.5 }]),
+      bad("noname", [{ price: 100 }]),
+      bad("notlist", "Half"),
+    ]);
+    const menu = await nextMenu((m) => m.items.length > 0);
+    expect(menu.items.map((i) => i.id)).toEqual(["samosa"]);
+  });
+
   it("writes nothing if any change in the batch fails", async () => {
     const broken = { ...samosa, id: undefined } as unknown as MenuItem;
     await expect(

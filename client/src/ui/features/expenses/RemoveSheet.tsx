@@ -7,12 +7,14 @@ import { Sheet } from "../../design-system/Sheet";
 import { useUndoToast } from "../../design-system/UndoToast";
 import { dayLabel, formatPrice, formatTime } from "../../format";
 import { METHOD_LABEL } from "../order/labels";
+import { useCan } from "../../../usecases/usePermissions";
 
 type Props = { expense: Expense | null; screen: ReadyExpenses; onClose: () => void };
 
 // A wrong expense comes off at once, with Undo: forgiveness, not a dialog.
 // It stays listed, struck through, so nothing quietly disappears.
 export function RemoveSheet({ expense, screen, onClose }: Props) {
+  const can = useCan();
   const showUndo = useUndoToast();
   const busy = useRef(false);
 
@@ -42,9 +44,11 @@ export function RemoveSheet({ expense, screen, onClose }: Props) {
             </p>
           </section>
           {expense.removedAt === undefined ? (
-            <Button variant="destructive" className="w-full" onClick={remove}>
-              Remove Expense
-            </Button>
+            can("expenses.remove") && (
+              <Button variant="destructive" className="w-full" onClick={remove}>
+                Remove Expense
+              </Button>
+            )
           ) : (
             <p className="text-center text-[15px] text-muted">Removed {formatTime(expense.removedAt)}. It no longer counts.</p>
           )}

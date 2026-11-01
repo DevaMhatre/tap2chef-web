@@ -1,3 +1,4 @@
+import type { RoleId } from "../../domain/access";
 import { phoneLabel } from "../../domain/phones";
 import { err, ok } from "../../domain/result";
 import type { Email } from "../../domain/signIn";
@@ -71,12 +72,14 @@ export const httpAccountService: AccountService = {
   async join(code, signal) {
     const reply = await post("/devices/join", { code, confirm: true, label: phoneLabel(navigator.userAgent ?? "") }, signal);
     if (!reply) return err("offline");
-    const { token, accountId, brandId, shopId, restaurantName } = reply.body;
+    const { token, accountId, brandId, shopId, restaurantName, person } = reply.body;
     if (reply.status !== 200) return err(joinError(reply));
     if (typeof token !== "string" || typeof accountId !== "string" || typeof shopId !== "string" || typeof restaurantName !== "string") {
       return err("failed");
     }
-    const session = { via: "link" as const, restaurantName };
+    const p = person as { name?: unknown; roleId?: unknown } | undefined;
+    const known = typeof p?.name === "string" && (p.roleId === "manager" || p.roleId === "staff");
+    const session = { via: "link" as const, restaurantName, ...(known && { person: { name: p.name as string, roleId: p.roleId as RoleId } }) };
     await adoptSession({ session, token, scope: { accountId, brandId: typeof brandId === "string" ? brandId : accountId, shopId } });
     return ok(session);
   },

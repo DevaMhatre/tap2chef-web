@@ -3,6 +3,7 @@ import request from "supertest";
 import app from "../app.js";
 import Device from "../models/Device.js";
 import LinkCode from "../models/LinkCode.js";
+import Member from "../models/Member.js";
 import { LINK_CODE_LIFETIME_MS } from "../controllers/deviceController.js";
 import { connect, closeDatabase, clearDatabase } from "./helpers/db.js";
 import { addShop, createAccount, legacyToken, phoneToken } from "./helpers/tenancy.js";
@@ -15,7 +16,7 @@ afterEach(async () => {
 afterAll(closeDatabase);
 
 const as = (token) => ({
-  code: () => request(app).post("/api/devices/link-code").set("Authorization", `Bearer ${token}`),
+  code: (person = { name: "Ravi", roleId: "staff" }) => request(app).post("/api/devices/link-code").set("Authorization", `Bearer ${token}`).send(person),
   list: () => request(app).get("/api/devices").set("Authorization", `Bearer ${token}`),
   remove: (id) => request(app).delete(`/api/devices/${id}`).set("Authorization", `Bearer ${token}`),
   pull: (shopId, since = 0) => request(app).get("/api/sync/pull").query({ shopId, since }).set("Authorization", `Bearer ${token}`),
@@ -30,9 +31,9 @@ async function ownerPhone(name = "Sharma Dhaba") {
   return { accountId, brandId, shopId, owner, deviceId, phone: as(token) };
 }
 
-/** A waiter's phone joined with a code from the owner's phone. */
-async function linkedPhone(owner) {
-  const { code } = (await owner.phone.code().expect(200)).body.data;
+/** A waiter's phone (or a manager's) joined with a code from the owner's phone. */
+async function linkedPhone(owner, person) {
+  const { code } = (await owner.phone.code(person).expect(200)).body.data;
   const joined = (await join(code, true).expect(200)).body.data;
   return { ...joined, phone: as(joined.token) };
 }
@@ -142,3 +143,42 @@ describe("a phone signed in before phones had records", () => {
     expect((await as(oldToken).pull(owner.shopId).expect(401)).body.reason).toBe("removed");
   });
 });
+
+describe("a phone is a person", () => {
+  it("joins as the person it was added for, and can do what their role allows", async () => {
+    const owner = await ownerPhone();
+    const ravi = await linkedPhone(owner, { name: "Ravi", roleId: "staff" });
+    expect(ravi.person).toEqual({ name: "Ravi", roleId: "staff" });
+    const s = owner.shopId;
+    await ravi.phone.push([{ table: "orders", record: { id: "o1", shopId: s } }, { table: "payments", record: { id: "p1", shopId: s } }]).expect(200);
+    await ravi.phone.push([{ table: "items", record: { id: "i1", brandId: owner.brandId } }]).expect(403);
+    await ravi.phone.push([{ table: "diningTables", record: { id: "t1", shopId: s } }]).expect(403);
+    await ravi.phone.push([{ table: "drawerEntries", record: { id: "d1", shopId: s } }]).expect(403);
+
+    const sunil = await linkedPhone(owner, { name: "Sunil", roleId: "manager" });
+    await sunil.phone.push([{ table: "items", record: { id: "i1", brandId: owner.brandId } }, { table: "drawerEntries", record: { id: "d1", shopId: s } }]).expect(200);
+    await sunil.phone.push([details(s, "Mine now")]).expect(403);
+
+    const { devices } = (await owner.phone.list()).body.data;
+    expect(devices.map((d) => d.person)).toEqual([undefined, "Ravi", "Sunil"]);
+  });
+
+  it("retires the person with their phone, never the owner", async () => {
+    const owner = await ownerPhone();
+    const ravi = await linkedPhone(owner);
+    const id = (await owner.phone.list()).body.data.devices.find((d) => d.person === "Ravi").id;
+    await owner.phone.remove(id).expect(200);
+    const left = await Member.findOne({ accountId: owner.accountId, name: "Ravi" }).lean();
+    expect(left.removedAt).toEqual(expect.any(Number));
+    await ravi.phone.pull(owner.shopId).expect(401);
+    await owner.phone.list().expect(200);
+  });
+
+  it("needs a name and a role a phone can have", async () => {
+    const owner = await ownerPhone();
+    await owner.phone.code({ name: " ", roleId: "staff" }).expect(400);
+    await owner.phone.code({ name: "Ravi", roleId: "owner" }).expect(400);
+    await owner.phone.code({}).expect(400);
+  });
+});
+

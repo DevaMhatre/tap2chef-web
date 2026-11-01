@@ -1,5 +1,6 @@
 // In-memory ports for use-case tests. Not imported by the app.
 import { applyChanges } from "./applyChanges";
+import type { PhonePerson } from "../domain/access";
 import type { Phone } from "../domain/phones";
 import type { SetupProgress, ShopDetails } from "../domain/setup";
 import type { DeviceSession } from "../domain/signIn";
@@ -15,6 +16,9 @@ import type {
   DaySnapshot,
   DrawerChange,
   DrawerRepository,
+  DuesRepository,
+  DuesSnapshot,
+  RepaymentChange,
   ExpenseChange,
   ExpenseRepository,
   ExpenseSnapshot,
@@ -29,7 +33,10 @@ import type {
   SetupStore,
   ShopRepository,
   PhonesService,
+  Refused,
+  KitchenPrinter,
 } from "./ports";
+import type { Kot } from "../domain/kot";
 
 export function fakeIds(): IdGenerator {
   let next = 0;
@@ -144,13 +151,32 @@ export function fakeExpenseRepository(initial: Partial<ExpenseSnapshot> = {}) {
   return { repository, writes, current: () => snapshot };
 }
 
+export function fakeDuesRepository(initial: Partial<DuesSnapshot> = {}) {
+  let snapshot: DuesSnapshot = { later: [], repayments: [], ...initial };
+  const listeners = new Set<(snapshot: DuesSnapshot) => void>();
+  const writes: RepaymentChange[][] = [];
+  const repository: DuesRepository = {
+    subscribe(onChange) {
+      listeners.add(onChange);
+      queueMicrotask(() => onChange(snapshot));
+      return () => listeners.delete(onChange);
+    },
+    async write(changes) {
+      writes.push([...changes]);
+      snapshot = applyChanges(snapshot, changes);
+      listeners.forEach((l) => l(snapshot));
+    },
+  };
+  return { repository, writes, current: () => snapshot };
+}
+
 /** A day's records the test sets; asked for another day, it answers an empty one. */
 export function fakeDayRepository(days: Record<string, Partial<DaySnapshot>> = {}) {
   const asked: string[] = [];
   const repository: DayRepository = {
     subscribe(day, onChange) {
       asked.push(day);
-      queueMicrotask(() => onChange({ orders: [], lines: [], payments: [], expenses: [], drawer: [], ...days[day] }));
+      queueMicrotask(() => onChange({ orders: [], lines: [], payments: [], expenses: [], drawer: [], repayments: [], ...days[day] }));
       return () => undefined;
     },
   };
@@ -261,7 +287,9 @@ export function fakeSwitch(initial = true) {
 /** Counts runs; `waiting` is what the outbox holds; `next` is what the next run answers. */
 export function fakeSyncService() {
   let waiting = 0;
+  let refused: Refused[] = [];
   const listeners = new Set<(n: number) => void>();
+  const refusedListeners = new Set<(r: Refused[]) => void>();
   const state = { runs: 0, next: undefined as SyncError | undefined, inFlight: 0, maxInFlight: 0, slow: 0 };
   const service: SyncService = {
     async run() {
@@ -279,12 +307,24 @@ export function fakeSyncService() {
       onChange(waiting);
       return () => listeners.delete(onChange);
     },
+    subscribeRefused(onChange) {
+      refusedListeners.add(onChange);
+      onChange(refused);
+      return () => refusedListeners.delete(onChange);
+    },
+    async dismissRefused() {
+      setRefused([]);
+    },
   };
+  function setRefused(next: Refused[]) {
+    refused = next;
+    refusedListeners.forEach((l) => l(next));
+  }
   function setWaiting(n: number) {
     waiting = n;
     listeners.forEach((l) => l(n));
   }
-  return { service, state, setWaiting };
+  return { service, state, setWaiting, setRefused };
 }
 
 /** The shop's details; `writes` records every save. */
@@ -340,11 +380,12 @@ export function fakeSetupStore({ progress = null as SetupProgress | null, empty 
 
 /** The server's list of phones, a code at a time. `offline` makes every call fail as offline. */
 export function fakePhonesService(phones: Phone[] = [], now: () => number = Date.now) {
-  const state = { phones: [...phones], offline: false, codes: 0 };
+  const state = { phones: [...phones], offline: false, codes: 0, people: [] as PhonePerson[] };
   const service: PhonesService = {
-    async linkCode() {
+    async linkCode(person) {
       if (state.offline) return err("offline");
       state.codes += 1;
+      state.people.push(person);
       return ok({ code: String(100000 + state.codes), expiresAt: now() + 10 * 60 * 1000 });
     },
     async list() {
@@ -357,4 +398,16 @@ export function fakePhonesService(phones: Phone[] = [], now: () => number = Date
     },
   };
   return { service, state };
+}
+
+/** Keeps every slip it is asked to print. */
+export function fakeKitchenPrinter() {
+  const printed: Kot[] = [];
+  const printer: KitchenPrinter = {
+    async print(kot) {
+      printed.push(kot);
+      return ok(undefined);
+    },
+  };
+  return { printer, printed };
 }

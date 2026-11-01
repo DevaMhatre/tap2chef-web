@@ -30,12 +30,12 @@ function toPhone(row: unknown): Phone[] {
   const r = row as Record<string, unknown>;
   if (typeof r?.id !== "string" || typeof r.label !== "string" || typeof r.lastSeenAt !== "number") return [];
   if (r.kind !== "owner" && r.kind !== "linked") return [];
-  return [{ id: r.id, label: r.label, kind: r.kind, lastSeenAt: r.lastSeenAt, current: r.current === true }];
+  return [{ id: r.id, label: r.label, kind: r.kind, lastSeenAt: r.lastSeenAt, current: r.current === true, ...(typeof r.person === "string" && { person: r.person }) }];
 }
 
 export const httpPhonesService: PhonesService = {
-  async linkCode(signal) {
-    const reply = await call("/link-code", { method: "POST" }, signal);
+  async linkCode(person, signal) {
+    const reply = await call("/link-code", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(person) }, signal);
     if (reply?.status !== 200 || typeof reply.body.code !== "string" || typeof reply.body.expiresAt !== "number") return err(problem(reply));
     return ok({ code: reply.body.code, expiresAt: reply.body.expiresAt });
   },

@@ -13,7 +13,7 @@ import { Sheet } from "../design-system/Sheet";
 import { useUndoToast } from "../design-system/UndoToast";
 import { BillSheet, type Settled } from "../features/order/BillSheet";
 import { CartBar } from "../features/order/CartBar";
-import { orderTitle, shortOrderTitle } from "../features/order/labels";
+import { dishName, orderTitle, shortOrderTitle } from "../features/order/labels";
 import { formatPrice } from "../format";
 import { LineSheet } from "../features/order/LineSheet";
 import { MenuPicker } from "../features/order/MenuPicker";
@@ -95,16 +95,16 @@ function ReadyScreen({ screen, back }: { screen: ReadyOrder; back: { to: string;
     }
   }
 
-  const add = (dish: Parameters<ReadyOrder["addDish"]>[0]) =>
+  const add = (dish: Parameters<ReadyOrder["addDish"]>[0], portion?: string) =>
     attempt(async () => {
-      const result = await screen.addDish(dish);
+      const result = await screen.addDish(dish, portion);
       if (result.ok) haptic();
     });
 
   const step = (line: OrderLine, by: 1 | -1) =>
     attempt(async () => {
       const result = await screen.stepQuantity(line.id, by);
-      if (result.ok && result.value) showUndo(`Removed ${line.name}`, result.value);
+      if (result.ok && result.value) showUndo(`Removed ${dishName(line)}`, result.value);
     });
 
   // Sent: the job here is done. Back to the floor, where the table's tile

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { can, PERMISSIONS, PRESET_ROLES, readPin, type Member, type MemberId, type Role, type RoleId, type ShopId } from "./access";
+import { can, PERMISSIONS, PRESET_ROLES, readPin, type Member, type MemberId, type Permission, type Role, type RoleId, type ShopId } from "./access";
 
 const here = "s1" as ShopId;
 const there = "s2" as ShopId;
@@ -71,3 +71,17 @@ describe("readPin", () => {
     for (const fine of ["1357", "2468", "1123", "9870"]) expect(readPin(fine).ok).toBe(true);
   });
 });
+
+describe("a phone's person", () => {
+  it("lets the owner's phone do everything, a waiter's take orders and money, and only the owner discount", async () => {
+    const { phoneCan } = await import("./access");
+    expect(phoneCan(undefined, "bills.discount")).toBe(true);
+    const ravi = { name: "Ravi", roleId: "staff" as RoleId };
+    expect(phoneCan(ravi, "payments.take")).toBe(true);
+    expect(["bills.discount", "day.view", "menu.edit", "tables.edit", "payments.remove", "payments.later"].map((p) => phoneCan(ravi, p as Permission))).toEqual([false, false, false, false, false, false]);
+    const sunil = { name: "Sunil", roleId: "manager" as RoleId };
+    expect(phoneCan(sunil, "day.view") && phoneCan(sunil, "menu.edit") && phoneCan(sunil, "payments.later")).toBe(true);
+    expect(phoneCan(sunil, "bills.discount")).toBe(false);
+  });
+});
+

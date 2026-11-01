@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import Account from "../models/Account.js";
 import Device from "../models/Device.js";
 import LinkCode from "../models/LinkCode.js";
+import Member from "../models/Member.js";
 import Shop from "../models/Shop.js";
 import SyncRecord from "../models/SyncRecord.js";
 import { can } from "../domain/access.js";
@@ -29,6 +30,7 @@ async function restaurantName(accountId, shopId) {
 export async function createLinkCode(req, res) {
   if (!mayManagePhones(req.device)) return fail(res, 403, "notOwnerPhone", "Only the owner's phone can add phones");
   const { accountId, member, device } = req.device;
+  const { name, roleId } = req.body;
   const expiresAt = new Date(Date.now() + LINK_CODE_LIFETIME_MS);
   // Another restaurant's live code may already hold these digits: draw again.
   for (let tries = 0; tries < 5; tries++) {
@@ -36,7 +38,7 @@ export async function createLinkCode(req, res) {
     try {
       await LinkCode.findOneAndReplace(
         { shopId: device.shopId },
-        { codeHash: hashCode(code), accountId, shopId: device.shopId, memberId: member._id, expiresAt },
+        { codeHash: hashCode(code), accountId, shopId: device.shopId, memberId: member._id, person: { name, roleId }, expiresAt },
         { upsert: true },
       );
       return res.json({ success: true, data: { code, expiresAt: expiresAt.getTime() } });
@@ -52,6 +54,8 @@ export async function listDevices(req, res) {
   if (!mayManagePhones(req.device)) return fail(res, 403, "notOwnerPhone", "Only the owner's phone sees the phones");
   const { accountId, device: here } = req.device;
   const devices = await Device.find({ accountId, shopId: here.shopId, removedAt: { $exists: false } }).sort({ createdAt: 1 }).lean();
+  const people = await Member.find({ accountId, _id: { $in: devices.filter((d) => d.kind === "linked").map((d) => d.memberId) } }).lean();
+  const personOf = new Map(people.filter((m) => m.roleId !== "owner").map((m) => [m._id, m.name]));
   res.json({
     success: true,
     data: {
@@ -59,6 +63,7 @@ export async function listDevices(req, res) {
         id: d._id,
         label: d.label,
         kind: d.kind,
+        ...(personOf.has(d.memberId) ? { person: personOf.get(d.memberId) } : {}),
         lastSeenAt: new Date(d.lastSeenAt).getTime(),
         current: d._id === here._id,
       })),
@@ -71,11 +76,16 @@ export async function removeDevice(req, res) {
   if (!mayManagePhones(req.device)) return fail(res, 403, "notOwnerPhone", "Only the owner's phone removes phones");
   const { accountId, device: here } = req.device;
   if (req.params.id === here._id) return fail(res, 409, "thisPhone", "This phone can't remove itself");
-  const { matchedCount } = await Device.updateOne(
+  const removed = await Device.findOneAndUpdate(
     { accountId, _id: req.params.id, shopId: here.shopId, removedAt: { $exists: false } },
     { removedAt: new Date() },
-  );
-  if (matchedCount === 0) return fail(res, 404, "unknown", "No such phone");
+  ).lean();
+  if (!removed) return fail(res, 404, "unknown", "No such phone");
+  // The person goes with their phone: kept for "by Ravi" on old records, able
+  // to do nothing. Never the owner (a phone linked before people existed works as them).
+  if (removed.kind === "linked") {
+    await Member.updateOne({ accountId, _id: removed.memberId, roleId: { $ne: "owner" } }, { removedAt: Date.now() });
+  }
   res.json({ success: true, data: {} });
 }
 
@@ -100,7 +110,19 @@ export async function join(req, res) {
   const shop = await Shop.findOne({ accountId: live.accountId, _id: live.shopId }).lean();
   if (!shop) return fail(res, 400, "wrongCode", "That restaurant no longer exists");
 
-  const { token } = await signInDevice({ accountId: live.accountId, shopId: shop._id, memberId: live.memberId, kind: "linked", label });
+  // The phone is a person: a member of its own, in this shop, with the role the owner chose.
+  const person = await Member.create({
+    _id: crypto.randomUUID(),
+    accountId: live.accountId,
+    name: live.person.name,
+    roleId: live.person.roleId,
+    // Whoever may edit the menu looks after the brand's menu, so works in all
+    // its shops: with one shop, all shops is this one. Revisit with 10i.
+    scope: can({ roleId: live.person.roleId, scope: { kind: "allShops" } }, "menu.edit", undefined)
+      ? { kind: "allShops" }
+      : { kind: "shop", shopId: shop._id },
+  });
+  const { token } = await signInDevice({ accountId: live.accountId, shopId: shop._id, memberId: person._id, kind: "linked", label });
   res.json({
     success: true,
     data: {
@@ -109,6 +131,7 @@ export async function join(req, res) {
       brandId: shop.brandId,
       shopId: shop._id,
       restaurantName: await restaurantName(live.accountId, shop._id),
+      person: { name: person.name, roleId: person.roleId },
     },
   });
 }

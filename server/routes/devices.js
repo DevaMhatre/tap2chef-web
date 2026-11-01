@@ -3,7 +3,7 @@ import { createLinkCode, join, listDevices, removeDevice } from "../controllers/
 import deviceAuth from "../middleware/deviceAuth.js";
 import { verifyLimiter } from "../middleware/rateLimiters.js";
 import validate from "../middleware/validate.js";
-import { joinSchema } from "../validators/schemas.js";
+import { joinSchema, linkCodeSchema } from "../validators/schemas.js";
 
 const router = express.Router();
 
@@ -12,7 +12,7 @@ router.post("/join", verifyLimiter, validate(joinSchema), join);
 
 router.use(deviceAuth);
 router.get("/", listDevices);
-router.post("/link-code", createLinkCode);
+router.post("/link-code", validate(linkCodeSchema), createLinkCode);
 router.delete("/:id", removeDevice);
 
 export default router;

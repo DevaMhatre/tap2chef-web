@@ -148,6 +148,7 @@ export function createMenuEditor(repository: MenuRepository, ids: IdGenerator): 
           categoryId: (remembered ?? sortedCategories[0])?.id ?? null,
           diet: lastUsed.diet ?? null,
           prices: Object.fromEntries((latest?.profiles ?? []).map((p) => [p.id, ""])),
+          halves: null,
         },
       };
     },

@@ -60,3 +60,25 @@ describe("compactPrices", () => {
     expect(compactPrices(item({}), profiles)).toEqual({ main: "Not on sale" });
   });
 });
+
+describe("half and full", () => {
+  const halfFull = (half: number, full: number) => ({
+    kind: "portions" as const,
+    portions: [
+      { name: "Half", price: paise(half) },
+      { name: "Full", price: paise(full) },
+    ],
+  });
+
+  it("names both portions in the summary", () => {
+    const biryani = item({ d: halfFull(18000, 32000), t: halfFull(18000, 32000) } as MenuItem["prices"]);
+    expect(plain(priceSummary(biryani, [dineIn, takeaway]))).toBe("Half ₹180 · Full ₹320");
+  });
+
+  it("leads a phone row with the full price and puts the half underneath", () => {
+    const biryani = item({ d: halfFull(18000, 32000), t: halfFull(20000, 35000) } as MenuItem["prices"]);
+    const row = compactPrices(biryani, [dineIn, takeaway]);
+    expect(plain(row.main)).toBe("₹320");
+    expect(plain(row.detail ?? "")).toBe("Half ₹180 · Takeaway Half ₹200 · Full ₹350");
+  });
+});

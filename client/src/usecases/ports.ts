@@ -2,8 +2,11 @@
 // implements them; use cases never import Dexie or browser APIs directly.
 
 import type { Category, ItemOverride, MenuItem, MenuProfile } from "../domain/menu";
+import type { PhonePerson } from "../domain/access";
 import type { DrawerEntry } from "../domain/drawer";
 import type { Phone } from "../domain/phones";
+import type { Repayment } from "../domain/dues";
+import type { Kot } from "../domain/kot";
 import type { Expense } from "../domain/expense";
 import type { BusinessDate, Order, OrderLine, OutOfStock, Payment } from "../domain/order";
 import type { SetupProgress, ShopDetails } from "../domain/setup";
@@ -13,8 +16,18 @@ import type { DiningTable } from "../domain/tables";
 
 export type SyncError = "offline" | "signedOut" | "failed";
 
+/**
+ * A change the account would not take from this phone (not allowed here). It
+ * is shown, never silently dropped; what the account holds comes back.
+ */
+export type Refused = { table: string; recordId: string; at: number };
+
 /** Sending this device's changes to the account and bringing everyone else's. */
 export interface SyncService {
+  /** Emits the changes refused since they were last seen, now and on every change. */
+  subscribeRefused(onChange: (refused: Refused[]) => void): () => void;
+  /** Seen: the notice goes. */
+  dismissRefused(): Promise<void>;
   /** Pushes what waits here, then pulls what changed elsewhere. Signed out, refuses at once. */
   run(signal?: AbortSignal): Promise<Result<void, SyncError>>;
   /** Emits how many changes wait to be sent, now and after every change. */
@@ -106,7 +119,19 @@ export type DaySnapshot = {
   expenses: Expense[];
   /** What the cash box started with and held, for this day and the day before (which carries in). */
   drawer: DrawerEntry[];
+  /** Money regulars brought back on this day. */
+  repayments: Repayment[];
 };
+
+/** Every bill on a regular's name, and everything paid back, all time. */
+export type DuesSnapshot = { later: Payment[]; repayments: Repayment[] };
+
+export type RepaymentChange = { table: "repayments"; record: Repayment; op: "put" | "remove" };
+
+export interface DuesRepository {
+  subscribe(onChange: (snapshot: DuesSnapshot) => void): () => void;
+  write(changes: readonly RepaymentChange[]): Promise<void>;
+}
 
 export interface DayRepository {
   subscribe(day: BusinessDate, onChange: (snapshot: DaySnapshot) => void): () => void;
@@ -151,8 +176,8 @@ export type PhonesError = "offline" | "notOwnerPhone" | "failed";
 
 /** The owner's phone adding and removing the restaurant's phones. Needs the internet. */
 export interface PhonesService {
-  /** A fresh 6-digit code; any earlier one stops working. */
-  linkCode(signal?: AbortSignal): Promise<Result<{ code: string; expiresAt: number }, PhonesError>>;
+  /** A fresh 6-digit code for a phone that will join as `person`; any earlier code stops working. */
+  linkCode(person: PhonePerson, signal?: AbortSignal): Promise<Result<{ code: string; expiresAt: number }, PhonesError>>;
   list(signal?: AbortSignal): Promise<Result<Phone[], PhonesError>>;
   /** Signs a phone out for good; it clears the restaurant from itself. */
   remove(id: string, signal?: AbortSignal): Promise<Result<void, PhonesError>>;
@@ -181,6 +206,11 @@ export interface SetupStore {
   /** Whether this phone holds nothing yet: no records, never signed in. */
   isEmptyDevice(): Promise<boolean>;
   dismissCard(): Promise<void>;
+}
+
+/** Prints a KOT. Today the phone's print dialog; Bluetooth or USB once the printer check says which (9b). */
+export interface KitchenPrinter {
+  print(kot: Kot): Promise<Result<void, "failed">>;
 }
 
 /** The two ways a web app can reach a receipt printer from a phone. */
@@ -215,10 +245,12 @@ export interface Ports {
   orders: OrderRepository;
   expenses: ExpenseRepository;
   days: DayRepository;
+  dues: DuesRepository;
   drawer: DrawerRepository;
   account: AccountService;
   phones: PhonesService;
   printer: PrinterCheck;
+  kitchen: KitchenPrinter;
   shop: ShopRepository;
   setup: SetupStore;
   ids: IdGenerator;

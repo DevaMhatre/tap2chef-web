@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { Repayment, RepaymentId } from "./dues";
 import { dayNumbers, isQuiet } from "./dayBook";
 import type { Expense, ExpenseId } from "./expense";
 import type { ItemId, ProfileId } from "./menu";
@@ -47,7 +48,7 @@ describe("dayNumbers", () => {
   it("is quiet on an empty day", () => {
     const n = dayNumbers(DAY, [], [], [], []);
     expect(isQuiet(n)).toBe(true);
-    expect(n.sales).toEqual({ total: 0, cash: 0, upi: 0 });
+    expect(n.sales).toEqual({ total: 0, cash: 0, upi: 0, later: 0 });
     expect(n.top).toEqual([]);
   });
 
@@ -56,12 +57,24 @@ describe("dayNumbers", () => {
     const payments = [pay("p1", "a", "cash", 500), pay("p2", "b", "upi", 300)];
     const expenses = [spend("e1", "cash", 340), spend("e2", "upi", 60), spend("e3", "cash", 999, YESTERDAY), spend("e4", "cash", 70, DAY, { removedAt: 9 })];
     const n = dayNumbers(DAY, orders, [], payments, expenses);
-    expect(n.sales).toEqual({ total: rupees(800), cash: rupees(500), upi: rupees(300) });
+    expect(n.sales).toEqual({ total: rupees(800), cash: rupees(500), upi: rupees(300), later: 0 });
     expect(n.spent).toEqual({ total: rupees(400), cash: rupees(340), upi: rupees(60) });
     expect(n.left).toBe(rupees(400));
     expect(n.drawer).toBe(rupees(160));
     expect(n.settled).toBe(2);
     expect(isQuiet(n)).toBe(false);
+  });
+
+  it("counts a bill on a regular's name as sold, not in the drawer; money back counts in the drawer the day it comes", () => {
+    const orders = [order("a", settled(500))];
+    const payments = [{ ...pay("p1", "a", "cash", 200), id: "p1" as PaymentId }, { id: "p2" as PaymentId, orderId: "a" as OrderId, amount: rupees(300), receivedAt: 5, method: "later", customer: "Sharma ji", phone: "9123456780" } as Payment];
+    const repaid: Repayment = { id: "r" as RepaymentId, customer: "Mehta", phone: "9876543210", amount: rupees(150), method: "cash", receivedAt: 5, businessDate: DAY };
+    const n = dayNumbers(DAY, orders, [], payments, [], [repaid, { ...repaid, id: "r2" as RepaymentId, method: "upi", amount: rupees(50) }]);
+    expect(n.sales).toEqual({ total: rupees(500), cash: rupees(200), upi: 0, later: rupees(300) });
+    expect(n.repaid).toEqual({ total: rupees(200), cash: rupees(150), upi: rupees(50) });
+    expect(n.left).toBe(rupees(500));
+    expect(n.drawer).toBe(rupees(350));
+    expect(isQuiet(dayNumbers(DAY, [], [], [], [], [repaid]))).toBe(false);
   });
 
   it("can go below zero: more spent than taken", () => {
@@ -118,6 +131,17 @@ describe("dayNumbers", () => {
       ["Roti", 5],
       ["Dal", 3],
       ["Tea", 3],
+    ]);
+  });
+
+  it("counts a half and a full apart", () => {
+    const orders = [order("a", { status: "open" })];
+    const half = { ...line("a", "Biryani", 180, 2), id: "h" as LineId, portion: "Half" };
+    const full = { ...line("a", "Biryani", 320, 3), id: "f" as LineId, portion: "Full" };
+    const more = { ...line("b", "Biryani", 320, 1), orderId: "a" as OrderId, id: "f2" as LineId, portion: "Full" };
+    expect(dayNumbers(DAY, orders, [half, full, more], [], []).top.map((d) => [d.portion, d.quantity])).toEqual([
+      ["Full", 4],
+      ["Half", 2],
     ]);
   });
 });

@@ -59,6 +59,9 @@ const owner = await device("owner", "light");
   await table(page, 1).waitFor();
   await page.getByRole("button", { name: /Sharma Dhaba/ }).filter({ visible: true }).first().click();
   await page.getByRole("button", { name: "Add a Phone" }).click();
+  await page.getByLabel("Whose phone is it?").fill("Ravi");
+  await page.getByRole("radio", { name: "No", exact: true }).click();
+  await page.getByRole("button", { name: "Show Code" }).click();
 }
 const img = owner.page.getByRole("img", { name: /A code to join/ });
 await img.waitFor();
@@ -107,6 +110,31 @@ for (const d of [owner, waiter]) {
   const twice = await d.page.getByText("· twice").count();
   check(twice === 2, `${d.name}: both Token 1 rows say twice (${twice}, ${Date.now() - start} ms)`);
   await d.shot("orders");
+}
+
+// --- Ravi bills table 2 and takes the cash: no discount on his phone; "by Ravi" on the owner's.
+{
+  const { page } = waiter;
+  await page.getByRole("link", { name: "Tables" }).click();
+  await table(page, 2).click();
+  await page.getByRole("button", { name: "Bill", exact: true }).click();
+  const sheet = page.getByRole("dialog", { name: "Table 2" });
+  await sheet.getByRole("radio", { name: "Cash" }).waitFor();
+  check(!(await sheet.getByRole("button", { name: "Round off or discount" }).isVisible()), "waiter: no discount on his phone");
+  await waiter.shot("bill-no-discount");
+  await sheet.getByRole("radio", { name: "Cash" }).click();
+  await sheet.getByRole("button", { name: /^Settle ₹320/ }).click();
+  await page.waitForTimeout(1500);
+}
+{
+  const { page } = owner;
+  await page.getByRole("link", { name: "Orders" }).click();
+  await page.getByRole("button", { name: /^Settled today/ }).waitFor({ timeout: 15_000 });
+  await page.getByRole("button", { name: /^Settled today/ }).click();
+  await page.getByRole("button", { name: /^Table 2/ }).click();
+  await page.getByText(/by Ravi/).waitFor({ timeout: 10_000 });
+  check(true, "owner: the settled bill says the cash was taken by Ravi");
+  await owner.shot("settled-by-ravi");
 }
 
 for (const d of [owner, waiter]) check(d.errors.length === 0, `${d.name}: no console errors${d.errors.length ? `: ${d.errors.join(" | ")}` : ""}`);

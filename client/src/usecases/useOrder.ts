@@ -1,9 +1,11 @@
 import { useState } from "react";
 import {
+  choicesOf,
   matchesSearch,
   menuFor,
   type ItemId,
   type MenuProfile,
+  type Choice,
   type MenuSection,
   type OrderableItem,
   type ProfileId,
@@ -18,16 +20,19 @@ import {
   ticketOf,
   type Order,
   type OrderId,
+  type OrderLine,
+  type RoundId,
   billOf,
   type BillError,
   type BillView,
   type PaymentError,
   type Ticket,
 } from "../domain/order";
+import { kotForRound, kotTitle } from "../domain/kot";
 import { sortByOrder } from "../domain/ordering";
 import { toRupeeText, type Paise } from "../domain/money";
 import { err, ok, type Result } from "../domain/result";
-import { amountPaid, quoteBill, type BillInput, type BillQuote } from "../domain/settlement";
+import { amountPaid, quoteBill, type BillInput, type BillQuote, type Discount } from "../domain/settlement";
 import type { DiningTable, TableId } from "../domain/tables";
 import type { CloseError, OrderCommands, Undo } from "./orderDesk";
 import { usePorts } from "./PortsProvider";
@@ -36,7 +41,10 @@ import { useMenuSnapshot, useOrderDesk } from "./useOrderDesk";
 
 export type OrderTarget = { kind: "table"; tableId: TableId } | { kind: "takeaway"; orderId: OrderId };
 
-export type DishRow = OrderableItem & { out: boolean; inCart: number };
+/** One way to order the dish ("Half ₹180"), with how many of it are in the cart. */
+export type ChoiceRow = Choice & { inCart: number };
+/** `inCart` counts every portion; `choices` has one entry for a dish sold one way. */
+export type DishRow = OrderableItem & { out: boolean; inCart: number; choices: ChoiceRow[] };
 
 /** The screen's one primary action: send what's in the cart, hand over the bill, or take the money. */
 export type NextStep = "send" | "bill" | "settle" | null;
@@ -65,7 +73,9 @@ export type OrderScreen =
       /** Where this order could move: tables with nothing running. */
       freeTables: DiningTable[];
       chooseProfile(id: ProfileId): void;
-      addDish(dish: OrderableItem): ReturnType<OrderCommands["addDish"]>;
+      addDish(dish: OrderableItem, portion?: string): ReturnType<OrderCommands["addDish"]>;
+      /** Prints a round's KOT for the kitchen. */
+      printRound(roundId: RoundId): Promise<Result<void, "failed" | "missing">>;
       send(): Promise<number>;
       moveTo(tableId: TableId): ReturnType<OrderCommands["moveOrder"]>;
       /** The bill can close once nothing is waiting to go to the kitchen. */
@@ -90,7 +100,7 @@ export type OrderScreen =
 export type ReadyOrder = Extract<OrderScreen, { state: "ready" }>;
 
 export function useOrder(target: OrderTarget): OrderScreen {
-  const { ids, clock } = usePorts();
+  const { ids, clock, kitchen } = usePorts();
   const { commands, snapshot } = useOrderDesk();
   const menu = useMenuSnapshot();
   // Fixed when the screen opens, so a double tap on the first dish can't
@@ -142,18 +152,38 @@ export function useOrder(target: OrderTarget): OrderScreen {
   };
 
   const out = outOn(snapshot.outOfStock, today);
-  const inCart = new Map<ItemId, number>();
-  for (const line of lines) {
-    if (line.state.status === "draft") inCart.set(line.itemId, (inCart.get(line.itemId) ?? 0) + line.quantity);
-  }
+  const drafts = lines.filter((l) => l.state.status === "draft");
+  const inCart = (itemId: ItemId, only?: (line: OrderLine) => boolean) =>
+    drafts.filter((l) => l.itemId === itemId && (only?.(l) ?? true)).reduce((n, l) => n + l.quantity, 0);
   const sections = menuFor(profileId, menu.categories, menu.items, menu.overrides).map((section) => ({
     ...section,
-    items: section.items.map((dish) => ({ ...dish, out: out.has(dish.item.id), inCart: inCart.get(dish.item.id) ?? 0 })),
+    items: section.items.map(
+      (dish): DishRow => ({
+        ...dish,
+        out: out.has(dish.item.id),
+        inCart: inCart(dish.item.id),
+        choices: choicesOf(dish.pricing).map((c) => ({ ...c, inCart: inCart(dish.item.id, (l) => l.portion === c.portion) })),
+      }),
+    ),
   }));
   const dishes = sections.flatMap((s) => s.items);
   const ticket = ticketOf(lines);
   const bill = running?.bill ?? billOf(order, [], []);
   const quote = (input: BillInput) => quoteBill(bill.subtotal, bill.paid, input);
+  // Where the bill sheet starts: a discount already agreed stays agreed.
+  const start: BillInput = {
+    finalAmount: bill.discount ? toRupeeText(bill.due) : "",
+    reason: bill.discount?.reason ?? "",
+    method: null,
+    received: "",
+    customer: "",
+    phone: "",
+  };
+  // Untouched, the agreed discount goes back exactly as stored: worked out
+  // again from the amount, a dish cancelled meanwhile would change it, and a
+  // phone that may not give discounts would be refused.
+  const discountOf = (input: BillInput, quoted: Discount | undefined) =>
+    input.finalAmount === start.finalAmount && input.reason === start.reason ? bill.discount : quoted;
   const status = order.state.status;
   const next: NextStep =
     ticket.draft.length > 0 ? "send" : status === "billed" ? "settle" : status === "open" && ticket.rounds.length > 0 ? "bill" : null;
@@ -171,7 +201,12 @@ export function useOrder(target: OrderTarget): OrderScreen {
     dishes,
     freeTables: sortByOrder(snapshot.tables).filter((t) => !busy.has(t.id)),
     chooseProfile: setChosenProfile,
-    addDish: (dish) => commands.addDish({ ...order, profileId }, dish),
+    addDish: (dish, portion) => commands.addDish({ ...order, profileId }, dish, portion),
+    async printRound(roundId) {
+      const round = ticket.rounds.find((r) => r.id === roundId);
+      if (!round) return err("missing");
+      return kitchen.print(kotForRound(kotTitle(labelOf({ order }, snapshot.tables)), round));
+    },
     send: () => commands.send(order.id),
     moveTo: (tableId) => commands.moveOrder(order.id, tableId),
     stepQuantity: commands.stepQuantity,
@@ -183,26 +218,21 @@ export function useOrder(target: OrderTarget): OrderScreen {
     bill,
     presentBill: () => commands.presentBill(order.id),
     removePayment: commands.removePayment,
-    billInput: {
-      finalAmount: bill.discount ? toRupeeText(bill.due) : "",
-      reason: bill.discount?.reason ?? "",
-      method: null,
-      received: "",
-    },
+    billInput: start,
     quote,
     async receive(input) {
       // Quoted from the bill on screen; the desk checks it against what is
       // stored, so a dish or payment added on another tab makes it refuse.
       const q = quote(input);
-      if (!q.discount.ok || input.method === null || !q.receipt?.ok) return err("invalid");
+      if (!q.discount.ok || !q.tender?.ok || !q.receipt?.ok) return err("invalid");
       const { amount, change } = q.receipt.value;
-      const result = await commands.receive(order.id, { method: input.method }, amount, q.discount.value);
+      const result = await commands.receive(order.id, q.tender.value, amount, discountOf(input, q.discount.value));
       return result.ok ? ok({ ...result.value, change }) : result;
     },
     closeBill(input) {
       const q = quote(input);
       if (!q.discount.ok) return Promise.resolve(err("invalid"));
-      return commands.closeBill(order.id, q.discount.value);
+      return commands.closeBill(order.id, discountOf(input, q.discount.value));
     },
   };
 }

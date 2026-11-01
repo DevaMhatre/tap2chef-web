@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  choicesOf,
+  mainPrice,
   matchesSearch,
+  priceOf,
   groupByCategory,
   isDuplicateName,
   itemToDraft,
@@ -16,6 +19,7 @@ import {
   type ItemId,
   type ItemOverride,
   type MenuItem,
+  type Pricing,
   type ProfileId,
 } from "./menu";
 import { paise } from "./money";
@@ -30,6 +34,7 @@ const draft = (overrides: Partial<ItemDraft> = {}): ItemDraft => ({
   categoryId: starters,
   diet: "veg",
   prices: { [dineIn]: "220", [takeaway]: "240" },
+  halves: null,
   ...overrides,
 });
 
@@ -118,6 +123,27 @@ describe("validateItemDraft", () => {
     });
   });
 
+  it("sells a dish half and full when a half price is given, in every list it's sold in", () => {
+    const result = validateItemDraft(draft({ halves: { [dineIn]: "120", [takeaway]: "130" } }));
+    expect(result.ok && result.value.prices).toEqual({
+      [dineIn]: { kind: "portions", portions: [{ name: "Half", price: 12000 }, { name: "Full", price: 22000 }] },
+      [takeaway]: { kind: "portions", portions: [{ name: "Half", price: 13000 }, { name: "Full", price: 24000 }] },
+    });
+  });
+
+  it("needs a half price for every list, below the full price", () => {
+    const result = validateItemDraft(draft({ halves: { [dineIn]: "220" } }));
+    expect(result).toEqual({ ok: false, error: { halves: { [dineIn]: "notLess", [takeaway]: "required" } } });
+    // A wrong full price is said on the full price, not again on the half.
+    const both = validateItemDraft(draft({ prices: { [dineIn]: "abc" }, halves: { [dineIn]: "100" } }));
+    expect(both).toEqual({ ok: false, error: { prices: { [dineIn]: "invalid" } } });
+  });
+
+  it("allows a ₹0 half under a priced full", () => {
+    const result = validateItemDraft(draft({ prices: { [dineIn]: "50" }, halves: { [dineIn]: "0" } }));
+    expect(result.ok).toBe(true);
+  });
+
   it("requires the item to be sold somewhere", () => {
     expect(validateItemDraft(draft({ prices: {} }))).toEqual({
       ok: false,
@@ -137,7 +163,36 @@ describe("itemToDraft", () => {
   });
 });
 
+describe("itemToDraft with portions", () => {
+  it("shows the full price as the price and the half beside it, and round-trips", () => {
+    const biryani = item("biryani", {
+      prices: { [dineIn]: { kind: "portions", portions: [{ name: "Half", price: paise(18000) }, { name: "Full", price: paise(32000) }] } },
+    });
+    const back = itemToDraft(biryani);
+    expect(back).toMatchObject({ prices: { [dineIn]: "320" }, halves: { [dineIn]: "180" } });
+    expect(validateItemDraft(back)).toMatchObject({ ok: true, value: { prices: biryani.prices } });
+    expect(itemToDraft(item("roti")).halves).toBeNull();
+  });
+});
+
+describe("choicesOf", () => {
+  it("is the dish itself, or one choice per portion, smallest first", () => {
+    expect(choicesOf({ kind: "fixed", price: paise(2000) })).toEqual([{ price: 2000 }]);
+    const halfFull: Pricing = { kind: "portions", portions: [{ name: "Half", price: paise(180) }, { name: "Full", price: paise(320) }] };
+    expect(choicesOf(halfFull)).toEqual([{ portion: "Half", price: 180 }, { portion: "Full", price: 320 }]);
+    expect(mainPrice(halfFull)).toBe(320);
+    expect(priceOf(halfFull, "Half")).toBe(180);
+    expect(priceOf(halfFull, undefined)).toBeUndefined();
+  });
+});
+
 describe("withPriceEverywhere", () => {
+  it("puts one half price on every offered list, or none", () => {
+    const d = draft({ prices: { [dineIn]: "", [takeaway]: "" } });
+    expect(withPriceEverywhere(d, "320", "180").halves).toEqual({ [dineIn]: "180", [takeaway]: "180" });
+    expect(withPriceEverywhere(d, "320").halves).toBeNull();
+  });
+
   it("fills every offered profile and only those", () => {
     expect(withPriceEverywhere(draft({ prices: { [dineIn]: "", [takeaway]: "9" } }), "40").prices).toEqual({
       [dineIn]: "40",

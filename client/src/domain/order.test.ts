@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CategoryId, ItemId, MenuItem, MenuProfile, OrderableItem, ProfileId } from "./menu";
 import { paise } from "./money";
+import type { Result } from "./result";
 import {
   activeOrderAt,
   activeOrders,
@@ -57,6 +58,11 @@ const dish = (id: string, price: number): OrderableItem => {
   return { item, pricing: { kind: "fixed", price: paise(price) } };
 };
 const roti = dish("Roti", 2000);
+const biryani: OrderableItem = (() => {
+  const pricing = { kind: "portions", portions: [{ name: "Half", price: paise(18000) }, { name: "Full", price: paise(32000) }] } as const;
+  const item: MenuItem = { id: "biryani" as ItemId, name: "Biryani", categoryId: "mains" as CategoryId, diet: "nonVeg", sortKey: "2", prices: { [dineIn]: { ...pricing, portions: [...pricing.portions] } } };
+  return { item, pricing: { ...pricing, portions: [...pricing.portions] } };
+})();
 const paneer = dish("Paneer Tikka", 24000);
 
 const order = (id: string, overrides: Partial<Order> = {}): Order => ({
@@ -69,8 +75,13 @@ const order = (id: string, overrides: Partial<Order> = {}): Order => ({
   ...overrides,
 });
 
+const added = (result: Result<OrderLine, unknown>): OrderLine => {
+  if (!result.ok) throw new Error("addToDraft refused");
+  return result.value;
+};
+
 const draftLine = (id: string, item: OrderableItem, quantity = 1, orderId = "o1"): OrderLine => ({
-  ...addToDraft([], orderId as OrderId, item, id as LineId, 1),
+  ...added(addToDraft([], orderId as OrderId, item, undefined, id as LineId, 1)),
   quantity,
 });
 
@@ -91,23 +102,38 @@ describe("businessDate", () => {
 
 describe("addToDraft", () => {
   it("snapshots name and price, and a second tap adds one more", () => {
-    const first = addToDraft([], "o1" as OrderId, roti, "l1" as LineId, 5);
+    const first = added(addToDraft([], "o1" as OrderId, roti, undefined, "l1" as LineId, 5));
     expect(first).toMatchObject({ name: "Roti", unitPrice: 2000, quantity: 1, note: "", state: { status: "draft" } });
-    expect(addToDraft([first], "o1" as OrderId, roti, "l2" as LineId, 6)).toMatchObject({ id: "l1", quantity: 2 });
+    expect(added(addToDraft([first], "o1" as OrderId, roti, undefined, "l2" as LineId, 6))).toMatchObject({ id: "l1", quantity: 2 });
   });
 
   it("starts a new line for a dish already sent, or one with a note", () => {
     const withSpice = { ...draftLine("l1", roti), note: "butter" };
-    expect(addToDraft([withSpice], "o1" as OrderId, roti, "l2" as LineId, 2).id).toBe("l2");
-    expect(addToDraft([sent(draftLine("l1", roti), "r1", 3)], "o1" as OrderId, roti, "l2" as LineId, 4).id).toBe("l2");
+    expect(added(addToDraft([withSpice], "o1" as OrderId, roti, undefined, "l2" as LineId, 2)).id).toBe("l2");
+    expect(added(addToDraft([sent(draftLine("l1", roti), "r1", 3)], "o1" as OrderId, roti, undefined, "l2" as LineId, 4)).id).toBe("l2");
   });
 
   it("never goes past 99", () => {
-    expect(addToDraft([draftLine("l1", roti, 99)], "o1" as OrderId, roti, "l2" as LineId, 2).quantity).toBe(99);
+    expect(added(addToDraft([draftLine("l1", roti, 99)], "o1" as OrderId, roti, undefined, "l2" as LineId, 2)).quantity).toBe(99);
   });
 
   it("adds a ₹0 dish", () => {
-    expect(addToDraft([], "o1" as OrderId, dish("Water", 0), "l1" as LineId, 1).unitPrice).toBe(0);
+    expect(added(addToDraft([], "o1" as OrderId, dish("Water", 0), undefined, "l1" as LineId, 1)).unitPrice).toBe(0);
+  });
+
+  it("snapshots the portion and its price; a half and a full are two lines", () => {
+    const half = added(addToDraft([], "o1" as OrderId, biryani, "Half", "l1" as LineId, 1));
+    expect(half).toMatchObject({ name: "Biryani", portion: "Half", unitPrice: 18000, quantity: 1 });
+    const full = added(addToDraft([half], "o1" as OrderId, biryani, "Full", "l2" as LineId, 2));
+    expect(full).toMatchObject({ id: "l2", portion: "Full", unitPrice: 32000 });
+    expect(added(addToDraft([half, full], "o1" as OrderId, biryani, "Half", "l3" as LineId, 3))).toMatchObject({ id: "l1", quantity: 2 });
+  });
+
+  it("refuses a portion the dish doesn't have, and a dish sold one way has none", () => {
+    expect(addToDraft([], "o1" as OrderId, biryani, undefined, "l1" as LineId, 1)).toEqual({ ok: false, error: "noPortion" });
+    expect(addToDraft([], "o1" as OrderId, biryani, "Quarter", "l1" as LineId, 1)).toEqual({ ok: false, error: "noPortion" });
+    expect(addToDraft([], "o1" as OrderId, roti, "Half", "l1" as LineId, 1)).toEqual({ ok: false, error: "noPortion" });
+    expect(added(addToDraft([], "o1" as OrderId, roti, undefined, "l1" as LineId, 1))).not.toHaveProperty("portion");
   });
 });
 
@@ -232,6 +258,8 @@ describe("correctPayment", () => {
   it("changes the method, keeps the amount, and leaves a mark", () => {
     expect(correctPayment(payment, "upi", 9)).toEqual({ ok: true, value: { ...payment, method: "upi", correctedAt: 9 } });
     expect(correctPayment(payment, "cash", 9)).toEqual({ ok: false, error: "unchanged" });
+    // Who took it stays with it.
+    expect(correctPayment({ ...payment, by: "Ravi" }, "upi", 9)).toMatchObject({ ok: true, value: { by: "Ravi", method: "upi" } });
   });
 });
 

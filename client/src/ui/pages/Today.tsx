@@ -8,6 +8,7 @@ import { useDayNumbers, type Day } from "../../usecases/useDayNumbers";
 import { ListFact, ListRow, ListSection } from "../design-system/GroupedList";
 import { CashSheet } from "../features/today/CashSheet";
 import { dayLabel, formatDay, formatPrice, formatSigned } from "../format";
+import { dishName } from "../features/order/labels";
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
@@ -73,7 +74,7 @@ export default function Today() {
         {n.top.length > 0 && (
           <ListSection header="Sold most">
             {n.top.map((d) => (
-              <ListFact key={d.itemId} label={d.name} value={`× ${d.quantity}`} />
+              <ListFact key={`${d.itemId}-${d.portion ?? ""}`} label={dishName(d)} value={`× ${d.quantity}`} />
             ))}
           </ListSection>
         )}
@@ -91,9 +92,18 @@ function Summary({ n }: { n: DayNumbers }) {
         <p className="mt-1 text-[44px] leading-none font-bold tracking-tight tabular-nums">{formatPrice(n.sales.total)}</p>
         <p className="mt-2 text-[15px] text-muted tabular-nums">
           Cash {formatPrice(n.sales.cash)} · UPI {formatPrice(n.sales.upi)}
+          {n.sales.later > 0 && ` · Later ${formatPrice(n.sales.later)}`}
         </p>
       </section>
       <ListSection>
+        {/* Money for earlier bills: in today's drawer, not today's sales. */}
+        {n.repaid.total > 0 && (
+          <ListFact
+            label="Paid back by regulars"
+            detail={`Cash ${formatPrice(n.repaid.cash)} · UPI ${formatPrice(n.repaid.upi)}`}
+            value={formatPrice(n.repaid.total)}
+          />
+        )}
         <ListFact
           label="Spent"
           detail={n.spent.total > 0 ? `Cash ${formatPrice(n.spent.cash)} · UPI ${formatPrice(n.spent.upi)}` : undefined}

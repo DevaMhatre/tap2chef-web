@@ -3,6 +3,7 @@ import { MdCheckCircle } from "react-icons/md";
 import type { DeviceSession } from "../../../domain/signIn";
 import { CODE_LENGTH } from "../../../domain/signIn";
 import { useSignIn, type SignIn, type SignInProblem } from "../../../usecases/useSignIn";
+import type { Refused } from "../../../usecases/ports";
 import type { Kept } from "../../../usecases/useSync";
 import { Button } from "../../design-system/Button";
 import { TextField } from "../../design-system/Field";
@@ -22,13 +23,37 @@ const PROBLEMS: Record<SignInProblem, string> = {
   nameTooLong: "Keep it under 60 letters.",
 };
 
-type Props = { open: boolean; session: DeviceSession | null | undefined; kept: Kept; onClose: () => void };
+type Props = {
+  open: boolean;
+  session: DeviceSession | null | undefined;
+  kept: Kept;
+  /** Changes the account refused from this phone, until seen. */
+  refused?: Refused[];
+  onDismissRefused?: () => void;
+  onClose: () => void;
+};
+
+// What a refused record was, in the owner's words.
+const RECORD_WORDS: Record<string, string> = {
+  payments: "a payment",
+  orders: "a bill",
+  orderItems: "a dish on a bill",
+  expenses: "an expense",
+  repayments: "money paid back",
+  items: "a dish on the menu",
+  categories: "a menu category",
+  menuProfiles: "a price list",
+  diningTables: "a table",
+  drawerEntries: "the cash drawer",
+  outOfStock: "a dish marked out today",
+  shopDetails: "the restaurant's details",
+};
 
 // Where the device's work is kept: on this phone only, or also in the owner's
 // account. Signed out, it is the way in; signed in, it says who. What it shows
 // is decided when it opens: signing in mid-way must not swap the sheet away
 // before its moment of completion.
-export function AccountSheet({ open, session, kept, onClose }: Props) {
+export function AccountSheet({ open, session, kept, refused = [], onDismissRefused, onClose }: Props) {
   const [opened, setOpened] = useState({ open: false, signIn: false, count: 0 });
   if (opened.open !== open) {
     setOpened({ open, signIn: open ? !session : opened.signIn, count: opened.count + (open ? 1 : 0) });
@@ -37,7 +62,9 @@ export function AccountSheet({ open, session, kept, onClose }: Props) {
   if (opened.signIn) return <SignInSheet key={opened.count} open={open} kept={kept} onClose={onClose} />;
   return (
     <Sheet open={open} onClose={onClose} title="Account" dismissLabel={null} action={<Done onClose={onClose} />}>
-      {session && <SignedIn session={session} kept={kept} />}
+      {refused.length > 0 && <NotSaved refused={refused} onDismiss={onDismissRefused} />}
+      {/* While something wasn't saved, "saved in your account" would contradict it. */}
+      {session && <SignedIn session={session} kept={kept} quiet={refused.length > 0} />}
     </Sheet>
   );
 }
@@ -55,7 +82,7 @@ const WHERE: Record<Kept, string> = {
   device: "Saved on this device for now. It goes to your account by itself when there is internet.",
 };
 
-function SignedIn({ session, kept, fresh = false }: { session: DeviceSession; kept: Kept; fresh?: boolean }) {
+function SignedIn({ session, kept, fresh = false, quiet = false }: { session: DeviceSession; kept: Kept; fresh?: boolean; quiet?: boolean }) {
   return (
     <div className="flex flex-col items-center gap-1 pt-2 pb-2 text-center">
       <MdCheckCircle aria-hidden className={`mb-1 text-5xl text-success ${fresh ? "animate-[pop_420ms_cubic-bezier(0.34,1.56,0.64,1)]" : ""}`} />
@@ -65,7 +92,7 @@ function SignedIn({ session, kept, fresh = false }: { session: DeviceSession; ke
       <p className="text-[15px] text-muted">
         {session.via === "email" ? <EmailText email={session.email} /> : "Joined with a code from the owner's phone"}
       </p>
-      <p className="mt-4 max-w-xs text-[15px] text-muted">{WHERE[kept]}</p>
+      {!quiet && <p className="mt-4 max-w-xs text-[15px] text-muted">{WHERE[kept]}</p>}
     </div>
   );
 }
@@ -227,5 +254,27 @@ function NameStep({ signIn }: { signIn: SignIn }) {
         {signIn.busy ? "Signing in…" : "Finish signing in"}
       </Button>
     </form>
+  );
+}
+
+// A change the account wouldn't take from this phone: said once, plainly, with
+// who can make it. What the account holds is already back on screen.
+function NotSaved({ refused, onDismiss }: { refused: Refused[]; onDismiss?: () => void }) {
+  const what = [...new Set(refused.map((r) => RECORD_WORDS[r.table] ?? "a change"))];
+  return (
+    <div className="mb-4 rounded-2xl bg-warning/15 px-4 py-3">
+      <p className="text-[17px] font-semibold">
+        {refused.length === 1 ? "A change wasn’t saved" : `${refused.length} changes weren’t saved`}
+      </p>
+      <p className="mt-1 text-[15px]">
+        This phone isn&rsquo;t allowed to change {what.join(", ")}, so the account kept what it had. Ask the owner or a manager to make
+        the change.
+      </p>
+      {onDismiss && (
+        <Button variant="plain" size="compact" className="-ml-3 mt-1" onClick={onDismiss}>
+          OK
+        </Button>
+      )}
+    </div>
   );
 }

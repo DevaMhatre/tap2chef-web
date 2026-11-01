@@ -23,6 +23,7 @@ const draft = (name: string, overrides: Partial<ItemDraft> = {}): ItemDraft => (
   categoryId: starters.id,
   diet: "veg",
   prices: { [dineIn.id]: "100" },
+  halves: null,
   ...overrides,
 });
 
@@ -105,6 +106,7 @@ describe("newItem", () => {
       categoryId: starters.id,
       diet: null,
       prices: { [dineIn.id]: "", [takeaway.id]: "" },
+      halves: null,
     });
     await menu.saveItem(menu.newItem().id, draft("Thali", { categoryId: mains.id, diet: "nonVeg" }));
     expect(menu.newItem().draft).toMatchObject({ categoryId: mains.id, diet: "nonVeg" });

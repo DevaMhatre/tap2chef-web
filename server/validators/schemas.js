@@ -41,6 +41,12 @@ export const pushSchema = z.object({
     .max(MAX_CHANGES, `At most ${MAX_CHANGES} changes at once`),
 });
 
+/** Who a phone is being added for. The owner is never added this way. */
+export const linkCodeSchema = z.object({
+  name: z.string().trim().min(1, "Enter their name").max(40),
+  roleId: z.enum(["manager", "staff"]),
+});
+
 export const joinSchema = z.object({
   code: z.string().regex(/^\d{6}$/, "The code is 6 digits"),
   /** False (or missing) only asks whose code it is. */
