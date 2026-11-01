@@ -193,6 +193,10 @@ wrong and how we now avoid it**.
 - *What happened:* the 8d test "keeps our version of a record we changed and haven't sent yet" passed with the rule removed: push runs before pull, so our version was already on the server and came back last. The rule only matters for an edit landing between push and pull; a new test puts one exactly there.
 - *Apply:* the guard-removal check (1c) applies to rules, not just locks. When a test survives the removal, find the case where the rule is the only thing standing, and test that.
 
+**1e. A fake must be as slow as the real thing where timing is the point** (2026-11-01)
+- *What happened:* the KOT printer's "never print twice" and "never reuse a number" guards were removed and every test still passed: the fake order store told screens of a write at the instant it saved, so the race those guards exist for never happened. Dexie tells them a moment later.
+- *Apply:* when a guard is about ordering, give the fake the real delay (`orders.lag.ms`) and watch the test fail without the guard.
+
 **2. A test fixture must fail loudly** (2026-10-29)
 - *What happened:* A fixture fell back to a default when its setup failed,
   which hid a wrong amount.

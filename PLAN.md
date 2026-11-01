@@ -48,6 +48,45 @@ A feature is marked `[x]` only when **all** of these hold:
 
 ---
 
+## Where we are (read first in a new chat; updated 2026-11-01)
+
+- **Pushed 2026-11-01:** 9b, the KOT printing by itself on Send (`713a479`): one printing phone over Bluetooth, KOT numbers from 4 am, CANCEL / REPRINT slips, "Not sent to the kitchen" offline, the KOT tally on Today, Dexie v11 (`kotPrints`). Reviewed (10 findings fixed); 399 client and 60 server tests, typecheck, lint, build, every `e2e/` script and the v10 → v11 upgrade green. Before it, the live site was `c851be4` (v10). Check `/.deployed` to confirm it is live.
+- **Proven at the restaurant:** the EZO 58 mm printer prints from the web app over Bluetooth LE (printer check, 2026-11-01).
+- **Next, in this order (V1's finish line below):**
+  1. ~~Commit 9b and push~~ done (`713a479`). (A push needs the founder's words "push"; it publishes the site and the API: CI, then the VPS within about 5 minutes.)
+  2. Send the owner the steps below; he turns printing on at the counter phone and a waiter sends one order. Proves the KOT prints by itself, and whether Chrome reconnects to the EZO by itself after being closed (if not: one tap on Reconnect).
+  3. One real lunch on Tap2Chef. Fix only what blocks it; the rest goes to the V2 list.
+  4. Tag V1.
+- **Message for the owner (step 2), in easy Marathi:**
+  > नमस्कार! आता KOT आपोआप प्रिंट होईल. एकदाच हे करा 🙏
+  > **१.** काउंटरवरच्या फोनमध्ये Tap2Chef उघडा, Bluetooth चालू करा, EZO प्रिंटर चालू ठेवा.
+  > **२.** वर रेस्टॉरंटच्या नावावर दाबा → खाली **Kitchen printer** → **Print KOTs from this phone** → यादीतून EZO निवडा.
+  > **३.** आता वेटरच्या फोनवरून एक ऑर्डर **Send** करा. काउंटरवर KOT आपोआप यायला हवा.
+  > मग सांगा, फक्त नंबर पाठवा:
+  > **KOT आपोआप आला का?** 1) हो  2) नाही
+  > **Tap2Chef बंद करून परत उघडल्यावर पण आला का?** 1) हो  2) नाही, Reconnect दाबावं लागलं
+- **To resume work:** `nvm use` (Node 22), then the commands in `CLAUDE.md`. Browser scripts are in `e2e/` (the dev site on :5199; the API with `npm run dev:memory` for the sync / setup / together / phones scripts). Commits and pushes only when the founder says so.
+
+---
+
+## V1: the first restaurant's daily service (decided 2026-11-01)
+
+**In V1 (all built):** menu with half / full, tables, orders, bills (Cash · UPI · Later), pay later, expenses, Today with the cash drawer and the KOT tally, a phone per person, sync, and the KOT printing by itself on Send (9b).
+
+**V1 is done when, and only when:**
+- [x] 9b committed and pushed — `713a479`
+- [ ] On the restaurant's phone, a waiter's Send prints the KOT on the EZO by itself
+- [ ] The restaurant runs one real lunch on Tap2Chef
+- [ ] Whatever *blocked* that lunch is fixed (whatever only annoyed goes to V2)
+
+Then V1 is tagged. Nothing else is built before that.
+
+**V2 list (untouched until V1 is tagged):** the customer's bill and GST (one question, numbers per phone), Marathi dish names on the slip, "by Ravi" on a round, a second restaurant (10b, 10i), subscriptions and billing, the iPhone keyboard check, cosmetic leftovers (spacing before "· Half", the Pay Later button below the fold on a part-paid bill).
+
+**How every feature ends:** its finish line is written before it is built; it is built, reviewed once, tested, reported, and it stops. New ideas go to the V2 list, not into the step at hand.
+
+---
+
 ## Roadmap
 
 ### 1–3. Foundations ✓
@@ -146,9 +185,9 @@ Said no to (for now, not forever): asking how customers pay (Cash and UPI on by 
 
 ### 9. Printing / KOT
 The first restaurant prints KOTs on a 58 mm EZO thermal printer (sold with USB and Bluetooth); printing decides whether the app is used during service.
-- [ ] 9a Printer check at `/printer-check` (any phone, set up or not): tries Bluetooth LE and USB for real and prints a test KOT; a screenshot says which way reaches the printer. Committed `29ac05b`; **to be run beside the printer** (needs the live site: Bluetooth and USB need https).
-- [ ] 9b KOT on Send, by the way 9a finds (Web Bluetooth on Android, USB, or a helper app for classic-Bluetooth printers), behind one port. **First half — `43f0567`:** the slip (domain `kot`: where it goes, New order / Round 2 - adding / CANCEL, time, qty x dish with HALF in capitals, notes under the dish, no prices; 32 characters for 58 mm), its ESC/POS bytes, a `KitchenPrinter` port, and **Print** on each sent round through the phone's print dialog (any printer the phone knows, any script). Still to come: printing by itself on Send and on a cancel, by the route 9a finds. "by Ravi" waits until a round stores who sent it
-- [ ] Web Bluetooth (Android) / print dialog / WhatsApp share, behind one port
+- [x] 9a Printer check at `/printer-check` (any phone, set up or not): tries Bluetooth LE and USB for real and prints a test KOT; a screenshot says which way reaches the printer. Committed `29ac05b`. **Run beside the printer 2026-11-01: the EZO prints over Bluetooth LE from the web app** (service `49535343-fe7d-4ae5-8fa9-9fafd205e455`, characteristic `49535343-8841-43f4-a8d4-ecbe34729bb3`); two test KOTs came out.
+- [ ] 9b KOT on Send, by the way 9a finds (Web Bluetooth on Android, USB, or a helper app for classic-Bluetooth printers), behind one port. **First half — `43f0567`:** the slip (domain `kot`: where it goes, New order / Round 2 - adding / CANCEL, time, qty x dish with HALF in capitals, notes under the dish, no prices; 32 characters for 58 mm), its ESC/POS bytes, a `KitchenPrinter` port, and **Print** on each sent round through the phone's print dialog (any printer the phone knows, any script). **Second half — `713a479`:** one phone is the printing phone ("Print KOTs from this phone" in the restaurant sheet, the EZO picked once); every phone's Send prints there by itself within a sync (about 3 s), oldest first, each once (a synced `kotPrints` record, Dexie v11), numbered KOT 1, 2, 3 from 4 am by that phone so numbers never repeat; a dish cancelled after its round printed prints a CANCEL slip; turning printing on never prints the day's old rounds; a slip that fails tries again in 5 s; "Printer not connected · 2 KOTs waiting · Reconnect" on the printing phone; rounds show "KOT 14"; offline, a waiter's round says "Not sent to the kitchen · tell the kitchen" (its slip can't reach the printer), and the printing phone says when waiters' KOTs can't reach it; Print shows once a round has printed (a REPRINT, counted), or in a restaurant without a kitchen printer. The slip follows the restaurant's own (KOT number, where in big letters, "Veg Dum Biryani (1)", a long name's second line indented, notes, who cancelled); bold double-height text, no image (fast over Bluetooth; English names). Today tallies the night: "KOT 1–37 · All paid", or each KOT whose bill isn't paid, by table. **To verify on his phone:** Chrome reconnecting to the EZO by itself after a reload. "by Ravi" on a round waits until a round stores who sent it
+- [ ] The customer's bill: print or WhatsApp share (with GST, one question, and bill numbers per phone)
 
 ### 11. What the first restaurant does that the app doesn't yet
 From the first restaurant's answers (2026-10-30): some dishes are sold half / full, and regulars sometimes pay later. Started while 9b waits for the printer check.
@@ -250,6 +289,10 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 - Open orders from an earlier business day are listed first under "Still open from yesterday" — never silently lost (2026-10-29).
 - Phones and tablets in portrait: the order is a bar under the thumb with Send on it; from 1024px the ticket sits beside the menu (2026-10-29).
 
+### Printing
+- One printing phone: a Bluetooth printer takes one phone at a time and reaches about 10 m, so the phone beside it prints every phone's KOTs, which reach it by sync. It numbers them (KOT 1 from 4 am), so one printer is one sequence and offline phones never collide. A synced record per printed round means none prints twice; turning printing on prints nothing from before. The slip copies the restaurant's own EZO slip (KOT number, where in big letters, "Dish (1)") as bold double-height text: an image would take seconds per KOT over Bluetooth; dishes named in another script wait for a restaurant that needs them. The night's tally is done on Today instead of by hand; Petpooja shows cancels and reprints in a "leakage" report (2026-11-01).
+- The first restaurant's EZO 58 mm printer speaks Bluetooth LE (the ISSC transparent-serial service), so the web app prints to it directly with Web Bluetooth on Android: no helper app, no print dialog. Found by the printer check on the live site (2026-11-01).
+
 ### Bills
 - GST waits for the customer's bill: nothing prints a customer bill yet, so nothing is gained by asking now. Then one question, asked the first time a bill prints: "Do you charge GST on bills? No · Yes, it's in my prices · Yes, I add it on the bill". No covers composition and unregistered restaurants (no tax lines; the composition line when needed). The rate, the CGST/SGST split and the codes follow from the answer, never typed. Bill numbers go by themselves, one series per phone (A-0001, B-0001), so offline phones never collide; confirm first that GST allows several series, else the server gives the next number. Petpooja and others ask for tax settings before day one (2026-11-01).
 - Pay later is a payment method, **Later**, on a regular's name and mobile: it settles the bill (a table frees, the bill stays exact) without touching a drawer. The number is the account: no customer record, so two phones offline writing it add to one and nothing can overwrite, and two Ravis stay two people; the latest name for a number wins. The number is asked once; after that the regular is one chip. Money back is a record of its own on the day it comes, so it counts in that day's drawer, never in sales twice. Only the owner and a manager put a bill on a name or take it back (`payments.later`), on the phone and on the server: most restaurants give no credit at all, and the owner isn't free to do it all. A Later payment is never "corrected" to Cash; it is paid back. Reminders are one tap to WhatsApp with the message written, sent by a person, never automatically: no SMS cost or DLT, and the owner decides when to ask a regular. Toast: house accounts made ahead, limits, invoices; Khatabook / OkCredit: name and phone, WhatsApp or SMS reminders. From the first restaurant's answers (2026-11-01).
@@ -301,7 +344,6 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 ## Open questions
 
 **For the restaurant owner**
-- The KOT printer (EZO 58D, 58 mm thermal, sold with USB and Bluetooth): does it show up to Web Bluetooth (Bluetooth Low Energy) on an Android phone, or only to classic Bluetooth? → decides how step 9 prints (Web Bluetooth, USB, or a helper app). Answered by trying it in the restaurant, not by asking.
 - Which starter dishes would a biryani shop and a café expect to see? → corrects the draft starter lists.
 - Do friends split one bill across several UPI payments?
 - GST: asked only when the customer's bill is built (after 9b), not before (see Decisions → Bills).
@@ -370,3 +412,7 @@ Market study (Toast, Square, Petpooja, Lightspeed) before each call; each one re
 - **2026-11-01** — Before the push: the server now checks payment corrections and removals and expense removals too (Undo stays for two minutes); a refused change shows on the phone and the account's copy comes back. A review of 10g–11b found and fixed: a deleted payment or expense skipped the checks, a bill on a name could be moved or shrunk, a rate limit was taken for a refusal (a payment would have been lost), a waiter saw an editable discount, a correction dropped "by Ravi", joining decided scope by role name, the dues read ran on waiters' phones. Found while testing: a discount larger than the bill (a dish cancelled on another phone) crashed every screen showing it, since step 6; what's due now never goes below ₹0. 9b's first half: the KOT and Print on each round.
 - **2026-11-01** — GST studied (5% for standalone restaurants, composition bills carry no tax, numbers in order per financial year) and decided: it waits for the customer's bill; then one question and numbers per phone.
 - **2026-11-01** — Committed 10g, 10h, 11a, 11b, the server's money rules and 9b's first half as `43f0567` (one commit: the steps share about forty files). Pushed for the printer check.
+- **2026-11-01** — Pushed (`c851be4` live, site and API). The printer check beside the EZO printed two test KOTs over Bluetooth LE: 9b prints directly from the web app.
+- **2026-11-01** — The restaurant sent its EZO KOT ("Kot No", bill no, "Table: Parcel 1", "Dish (1)") used to tally; studied Petpooja (KOT vs bill numbers, leakage report). Built 9b's second half, not committed: printing by itself from one printing phone, KOT numbers from 4 am, CANCEL and REPRINT slips, the tally on Today. Caught on the way: tests of "never twice" and "never the same number" passed without their guards (the fake emitted instantly); a fake that emits a moment later, like Dexie, made them fail as they should. Also: picking the printer again would have dropped the KOTs that waited; starting before orders loaded would have printed the day's old rounds; a long dish's second line read as another dish.
+- **2026-11-01** — A review of 9b found ten problems, all fixed with tests that fail without the fix: an order left open overnight would reprint its KOTs; a dish cancelled before its round printed got a CANCEL slip; "not printed" was guessed from time and would have warned about rounds that never print (now only a phone that is offline says so); stop-then-start, Print before the printer, and a failed save could each print a slip twice; the tally counted fully cancelled orders and missed orders from the day before; the banner's Reconnect lost the tap's permission; Stop could bring the "not connected" banner back; notes printed flush left.
+- **2026-11-01** — V1 scoped with a finish line (the founder: stop stretching; every feature ends). "Where we are" written at the top of this file for a fresh start.
