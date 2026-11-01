@@ -45,7 +45,9 @@ describe("the KOT, for a printer", () => {
 
   it("is a page the size of a 58 mm roll, with names escaped and HALF in capitals", () => {
     const page = kotPage(kot);
-    expect(page).toContain("size: 58mm auto");
+    // Seven lines and a title: a slip, never an A4 page.
+    expect(page).toMatch(/size: 58mm \d+mm;/);
+    expect(Number(/size: 58mm (\d+)mm/.exec(page)![1])).toBeLessThan(60);
     expect(page).toContain("<h1>Table 4</h1>");
     expect(page).toContain("2 x Biryani &lt;Special&gt; HALF");
     expect(page).not.toContain("<Special>");
